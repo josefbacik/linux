@@ -665,6 +665,15 @@ static ssize_t btrfs_space_info_show_##field(struct kobject *kobj,	\
 }									\
 BTRFS_ATTR(space_info, field, btrfs_space_info_show_##field)
 
+static ssize_t btrfs_space_info_show_enospc_events(struct kobject *kobj,
+						   struct kobj_attribute *a,
+						   char *buf)
+{
+	struct btrfs_space_info *sinfo = to_space_info(kobj);
+	int events = atomic_read(&sinfo->enospc_events);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", events);
+}
+
 SPACE_INFO_ATTR(flags);
 SPACE_INFO_ATTR(total_bytes);
 SPACE_INFO_ATTR(bytes_used);
@@ -675,6 +684,8 @@ SPACE_INFO_ATTR(bytes_readonly);
 SPACE_INFO_ATTR(bytes_zone_unusable);
 SPACE_INFO_ATTR(disk_used);
 SPACE_INFO_ATTR(disk_total);
+BTRFS_ATTR(space_info, enospc_events,
+	   btrfs_space_info_show_enospc_events);
 
 static struct attribute *space_info_attrs[] = {
 	BTRFS_ATTR_PTR(space_info, flags),
@@ -687,6 +698,7 @@ static struct attribute *space_info_attrs[] = {
 	BTRFS_ATTR_PTR(space_info, bytes_zone_unusable),
 	BTRFS_ATTR_PTR(space_info, disk_used),
 	BTRFS_ATTR_PTR(space_info, disk_total),
+	BTRFS_ATTR_PTR(space_info, enospc_events),
 	NULL,
 };
 ATTRIBUTE_GROUPS(space_info);
