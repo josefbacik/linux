@@ -1143,6 +1143,7 @@ int btrfs_create_free_space_tree(struct btrfs_fs_info *fs_info)
 	struct btrfs_root *free_space_root;
 	struct btrfs_block_group *block_group;
 	struct rb_node *node;
+	struct btrfs_key key;
 	int ret;
 
 	trans = btrfs_start_transaction(tree_root, 0);
@@ -1151,8 +1152,11 @@ int btrfs_create_free_space_tree(struct btrfs_fs_info *fs_info)
 
 	set_bit(BTRFS_FS_CREATING_FREE_SPACE_TREE, &fs_info->flags);
 	set_bit(BTRFS_FS_FREE_SPACE_TREE_UNTRUSTED, &fs_info->flags);
-	free_space_root = btrfs_create_tree(trans,
-					    BTRFS_FREE_SPACE_TREE_OBJECTID);
+
+	key.objectid = BTRFS_FREE_SPACE_TREE_OBJECTID;
+	key.type = BTRFS_ROOT_ITEM_KEY;
+	key.offset = 0;
+	free_space_root = btrfs_create_tree(trans, &key);
 	if (IS_ERR(free_space_root)) {
 		ret = PTR_ERR(free_space_root);
 		goto abort;

@@ -1243,13 +1243,12 @@ struct btrfs_root *btrfs_alloc_dummy_root(struct btrfs_fs_info *fs_info)
 #endif
 
 struct btrfs_root *btrfs_create_tree(struct btrfs_trans_handle *trans,
-				     u64 objectid)
+				     struct btrfs_key *key)
 {
 	struct btrfs_fs_info *fs_info = trans->fs_info;
 	struct extent_buffer *leaf;
 	struct btrfs_root *tree_root = fs_info->tree_root;
 	struct btrfs_root *root;
-	struct btrfs_key key;
 	unsigned int nofs_flag;
 	int ret = 0;
 
@@ -1258,17 +1257,15 @@ struct btrfs_root *btrfs_create_tree(struct btrfs_trans_handle *trans,
 	 * context to avoid deadlock if reclaim happens.
 	 */
 	nofs_flag = memalloc_nofs_save();
-	root = btrfs_alloc_root(fs_info, objectid, GFP_KERNEL);
+	root = btrfs_alloc_root(fs_info, key->objectid, GFP_KERNEL);
 	memalloc_nofs_restore(nofs_flag);
 	if (!root)
 		return ERR_PTR(-ENOMEM);
 
-	root->root_key.objectid = objectid;
-	root->root_key.type = BTRFS_ROOT_ITEM_KEY;
-	root->root_key.offset = 0;
+	memcpy(&root->root_key, key, sizeof(struct btrfs_key));
 
-	leaf = btrfs_alloc_tree_block(trans, root, 0, objectid, NULL, 0, 0, 0,
-				      BTRFS_NESTING_NORMAL);
+	leaf = btrfs_alloc_tree_block(trans, root, 0, key->objectid, NULL, 0, 0,
+				      0, BTRFS_NESTING_NORMAL);
 	if (IS_ERR(leaf)) {
 		ret = PTR_ERR(leaf);
 		leaf = NULL;
@@ -1290,7 +1287,7 @@ struct btrfs_root *btrfs_create_tree(struct btrfs_trans_handle *trans,
 	btrfs_set_root_used(&root->root_item, leaf->len);
 	btrfs_set_root_last_snapshot(&root->root_item, 0);
 	btrfs_set_root_dirid(&root->root_item, 0);
-	if (is_fstree(objectid))
+	if (is_fstree(key->objectid))
 		generate_random_guid(root->root_item.uuid);
 	else
 		export_guid(root->root_item.uuid, &guid_null);
@@ -1298,10 +1295,7 @@ struct btrfs_root *btrfs_create_tree(struct btrfs_trans_handle *trans,
 
 	btrfs_tree_unlock(leaf);
 
-	key.objectid = objectid;
-	key.type = BTRFS_ROOT_ITEM_KEY;
-	key.offset = 0;
-	ret = btrfs_insert_root(trans, tree_root, &key, &root->root_item);
+	ret = btrfs_insert_root(trans, tree_root, key, &root->root_item);
 	if (ret)
 		goto fail;
 

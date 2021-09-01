@@ -995,7 +995,10 @@ int btrfs_quota_enable(struct btrfs_fs_info *fs_info)
 	/*
 	 * initially create the quota tree
 	 */
-	quota_root = btrfs_create_tree(trans, BTRFS_QUOTA_TREE_OBJECTID);
+	key.objectid = BTRFS_QUOTA_TREE_OBJECTID;
+	key.type = BTRFS_ROOT_ITEM_KEY;
+	key.offset = 0;
+	quota_root = btrfs_create_tree(trans, &key);
 	if (IS_ERR(quota_root)) {
 		ret =  PTR_ERR(quota_root);
 		btrfs_abort_transaction(trans, ret);

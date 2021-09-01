@@ -4656,6 +4656,7 @@ int btrfs_create_uuid_tree(struct btrfs_fs_info *fs_info)
 	struct btrfs_root *tree_root = fs_info->tree_root;
 	struct btrfs_root *uuid_root;
 	struct task_struct *task;
+	struct btrfs_key key;
 	int ret;
 
 	/*
@@ -4666,7 +4667,10 @@ int btrfs_create_uuid_tree(struct btrfs_fs_info *fs_info)
 	if (IS_ERR(trans))
 		return PTR_ERR(trans);
 
-	uuid_root = btrfs_create_tree(trans, BTRFS_UUID_TREE_OBJECTID);
+	key.objectid = BTRFS_UUID_TREE_OBJECTID;
+	key.type = BTRFS_ROOT_ITEM_KEY;
+	key.offset = 0;
+	uuid_root = btrfs_create_tree(trans, &key);
 	if (IS_ERR(uuid_root)) {
 		ret = PTR_ERR(uuid_root);
 		btrfs_abort_transaction(trans, ret);
