@@ -17,6 +17,21 @@
 #include "raid56.h"
 #include "zoned.h"
 
+struct btrfs_root *btrfs_csum_root(struct btrfs_fs_info *fs_info, u64 bytenr)
+{
+	struct btrfs_block_group *block_group;
+
+	if (!btrfs_fs_incompat(fs_info, EXTENT_TREE_V2))
+		return btrfs_grab_root(fs_info->csum_root);
+	block_group = btrfs_lookup_block_group(fs_info, bytenr);
+
+	ASSERT(block_group);
+	if (!block_group)
+		return NULL;
+
+	return btrfs_grab_root(block_group->csum_root);
+}
+
 static struct btrfs_root *get_block_group_root(struct btrfs_fs_info *fs_info)
 {
 	if (btrfs_fs_incompat(fs_info, EXTENT_TREE_V2))
@@ -1966,6 +1981,38 @@ static int check_chunk_block_group_mappings(struct btrfs_fs_info *fs_info)
 	return ret;
 }
 
+static int read_block_group_roots(struct btrfs_fs_info *info,
+				  struct btrfs_block_group *block_group)
+{
+	struct btrfs_root *root;
+	struct btrfs_key key;
+
+	if (!btrfs_fs_incompat(info, EXTENT_TREE_V2))
+		return 0;
+
+	/* We don't create csum roots for non-data block groups. */
+	if (!(block_group->flags & BTRFS_BLOCK_GROUP_DATA))
+		return 0;
+
+	if (btrfs_test_opt(info, IGNOREDATACSUMS))
+		return 0;
+
+	key.objectid = BTRFS_CSUM_TREE_OBJECTID;
+	key.type = BTRFS_ROOT_ITEM_KEY;
+	key.offset = block_group->start;
+
+	root = btrfs_read_tree_root(info->tree_root, &key);
+	if (IS_ERR(root)) {
+		if (!btrfs_test_opt(info, IGNOREBADROOTS))
+			return PTR_ERR(root);
+	} else {
+		set_bit(BTRFS_ROOT_TRACK_DIRTY, &root->state);
+		block_group->csum_root = root;
+	}
+
+	return 0;
+}
+
 static int read_one_block_group(struct btrfs_fs_info *info,
 				struct btrfs_block_group_item *bgi,
 				const struct btrfs_key *key,
@@ -2056,6 +2103,12 @@ static int read_one_block_group(struct btrfs_fs_info *info,
 		add_new_free_space(cache, cache->start,
 				   cache->start + cache->length);
 		btrfs_free_excluded_extents(cache);
+	}
+
+	ret = read_block_group_roots(info, cache);
+	if (ret) {
+		btrfs_remove_free_space_cache(cache);
+		goto error;
 	}
 
 	ret = btrfs_add_block_group_cache(info, cache);
@@ -2367,6 +2420,31 @@ static int insert_dev_extents(struct btrfs_trans_handle *trans,
 	return ret;
 }
 
+static int add_block_group_roots(struct btrfs_trans_handle *trans,
+				 struct btrfs_block_group *block_group)
+{
+	struct btrfs_fs_info *fs_info = trans->fs_info;
+	struct btrfs_root *root;
+	struct btrfs_key key;
+
+	if (!btrfs_fs_incompat(fs_info, EXTENT_TREE_V2))
+		return 0;
+
+	if (!(block_group->flags & BTRFS_BLOCK_GROUP_DATA))
+		return 0;
+
+	key.objectid = BTRFS_CSUM_TREE_OBJECTID;
+	key.type = BTRFS_ROOT_ITEM_KEY;
+	key.offset = block_group->start;
+
+	root = btrfs_create_tree(trans, &key);
+	if (IS_ERR(root))
+		return PTR_ERR(root);
+	block_group->csum_root = root;
+
+	return 0;
+}
+
 /*
  * This function, btrfs_create_pending_block_groups(), belongs to the phase 2 of
  * chunk allocation.
@@ -2403,8 +2481,17 @@ void btrfs_create_pending_block_groups(struct btrfs_trans_handle *trans)
 		}
 		ret = insert_dev_extents(trans, block_group->start,
 					 block_group->length);
-		if (ret)
+		if (ret) {
 			btrfs_abort_transaction(trans, ret);
+			goto next;
+		}
+
+		ret = add_block_group_roots(trans, block_group);
+		if (ret) {
+			btrfs_abort_transaction(trans, ret);
+			goto next;
+		}
+
 		add_block_group_free_space(trans, block_group);
 
 		/*

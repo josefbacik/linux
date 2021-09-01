@@ -69,6 +69,8 @@ struct btrfs_block_group {
 	u64 flags;
 	u64 cache_generation;
 
+	struct btrfs_root *csum_root;
+
 	/*
 	 * If the free space extent count exceeds this number, convert the block
 	 * group to bitmaps.
@@ -330,4 +332,5 @@ void btrfs_unfreeze_block_group(struct btrfs_block_group *cache);
 bool btrfs_inc_block_group_swap_extents(struct btrfs_block_group *bg);
 void btrfs_dec_block_group_swap_extents(struct btrfs_block_group *bg, int amount);
 
+struct btrfs_root *btrfs_csum_root(struct btrfs_fs_info *fs_info, u64 bytenr);
 #endif /* BTRFS_BLOCK_GROUP_H */

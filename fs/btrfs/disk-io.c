@@ -2466,7 +2466,8 @@ static int btrfs_read_roots(struct btrfs_fs_info *fs_info)
 	btrfs_init_devices_late(fs_info);
 
 	/* If IGNOREDATACSUMS is set don't bother reading the csum root. */
-	if (!btrfs_test_opt(fs_info, IGNOREDATACSUMS)) {
+	if (!btrfs_test_opt(fs_info, IGNOREDATACSUMS) &&
+	    !btrfs_fs_incompat(fs_info, EXTENT_TREE_V2)) {
 		location.objectid = BTRFS_CSUM_TREE_OBJECTID;
 		root = btrfs_read_tree_root(tree_root, &location);
 		if (IS_ERR(root)) {

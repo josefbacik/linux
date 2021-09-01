@@ -16,6 +16,7 @@
 #include "volumes.h"
 #include "print-tree.h"
 #include "compression.h"
+#include "block-group.h"
 
 #define __MAX_CSUM_ITEMS(r, size) ((unsigned long)(((BTRFS_LEAF_DATA_SIZE(r) - \
 				   sizeof(struct btrfs_item) * 2) / \
@@ -257,6 +258,7 @@ static int search_csum_tree(struct btrfs_fs_info *fs_info,
 			    struct btrfs_path *path, u64 disk_bytenr,
 			    u64 len, u8 *dst)
 {
+	struct btrfs_root *csum_root = btrfs_csum_root(fs_info, disk_bytenr);
 	struct btrfs_csum_item *item = NULL;
 	struct btrfs_key key;
 	const u32 sectorsize = fs_info->sectorsize;
@@ -285,7 +287,7 @@ static int search_csum_tree(struct btrfs_fs_info *fs_info,
 
 	/* Current item doesn't contain the desired range, search again */
 	btrfs_release_path(path);
-	item = btrfs_lookup_csum(NULL, fs_info->csum_root, path, disk_bytenr, 0);
+	item = btrfs_lookup_csum(NULL, csum_root, path, disk_bytenr, 0);
 	if (IS_ERR(item)) {
 		ret = PTR_ERR(item);
 		goto out;
@@ -305,6 +307,7 @@ found:
 out:
 	if (ret == -ENOENT)
 		ret = 0;
+	btrfs_put_root(csum_root);
 	return ret;
 }
 
@@ -365,6 +368,7 @@ static int search_file_offset_in_bio(struct bio *bio, struct inode *inode,
 blk_status_t btrfs_lookup_bio_sums(struct inode *inode, struct bio *bio, u8 *dst)
 {
 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
+	struct btrfs_root *csum_root;
 	struct extent_io_tree *io_tree = &BTRFS_I(inode)->io_tree;
 	struct btrfs_path *path;
 	const u32 sectorsize = fs_info->sectorsize;
@@ -374,9 +378,14 @@ blk_status_t btrfs_lookup_bio_sums(struct inode *inode, struct bio *bio, u8 *dst
 	u64 cur_disk_bytenr;
 	u8 *csum;
 	const unsigned int nblocks = orig_len >> fs_info->sectorsize_bits;
+	blk_status_t status = BLK_STS_RESOURCE;
 	int count = 0;
 
-	if (!fs_info->csum_root || (BTRFS_I(inode)->flags & BTRFS_INODE_NODATASUM))
+	if (BTRFS_I(inode)->flags & BTRFS_INODE_NODATASUM)
+		return BLK_STS_OK;
+
+	csum_root = btrfs_csum_root(fs_info, orig_disk_bytenr);
+	if (!csum_root)
 		return BLK_STS_OK;
 
 	/*
@@ -394,7 +403,7 @@ blk_status_t btrfs_lookup_bio_sums(struct inode *inode, struct bio *bio, u8 *dst
 	ASSERT(bio_op(bio) == REQ_OP_READ);
 	path = btrfs_alloc_path();
 	if (!path)
-		return BLK_STS_RESOURCE;
+		goto out;
 
 	if (!dst) {
 		struct btrfs_io_bio *btrfs_bio = btrfs_io_bio(bio);
@@ -402,10 +411,8 @@ blk_status_t btrfs_lookup_bio_sums(struct inode *inode, struct bio *bio, u8 *dst
 		if (nblocks * csum_size > BTRFS_BIO_INLINE_CSUM_SIZE) {
 			btrfs_bio->csum = kmalloc_array(nblocks, csum_size,
 							GFP_NOFS);
-			if (!btrfs_bio->csum) {
-				btrfs_free_path(path);
-				return BLK_STS_RESOURCE;
-			}
+			if (!btrfs_bio->csum)
+				goto out;
 		} else {
 			btrfs_bio->csum = btrfs_bio->csum_inline;
 		}
@@ -488,8 +495,11 @@ blk_status_t btrfs_lookup_bio_sums(struct inode *inode, struct bio *bio, u8 *dst
 		}
 	}
 
+	status = BLK_STS_OK;
+out:
 	btrfs_free_path(path);
-	return BLK_STS_OK;
+	btrfs_put_root(csum_root);
+	return status;
 }
 
 int btrfs_lookup_csums_range(struct btrfs_root *root, u64 start, u64 end,
@@ -791,7 +801,7 @@ int btrfs_del_csums(struct btrfs_trans_handle *trans,
 	const u32 csum_size = fs_info->csum_size;
 	u32 blocksize_bits = fs_info->sectorsize_bits;
 
-	ASSERT(root == fs_info->csum_root ||
+	ASSERT(root->root_key.objectid == BTRFS_CSUM_TREE_OBJECTID ||
 	       root->root_key.objectid == BTRFS_TREE_LOG_OBJECTID);
 
 	path = btrfs_alloc_path();
