@@ -53,6 +53,17 @@
 /* tracks free space in block groups. */
 #define BTRFS_FREE_SPACE_TREE_OBJECTID 10ULL
 
+/* hold the block group items. */
+#define BTRFS_BLOCK_GROUP_TREE_OBJECTID 11ULL
+
+/* hold the snapshot items. */
+#define BTRFS_SNAPSHOT_TREE_OBJECTID 12ULL
+
+/* hold the drop items. */
+#define BTRFS_DROP_TREE_OBJECTID 13ULL
+
+/* hold the remap items. */
+#define BTRFS_REMAP_TREE_OBJECTID 14ULL
 /* device stats in the device tree */
 #define BTRFS_DEV_STATS_OBJECTID 0ULL
 
@@ -483,8 +494,9 @@ struct btrfs_free_space_header {
 	__le64 num_bitmaps;
 } __attribute__ ((__packed__));
 
-#define BTRFS_HEADER_FLAG_WRITTEN	(1ULL << 0)
-#define BTRFS_HEADER_FLAG_RELOC		(1ULL << 1)
+#define BTRFS_HEADER_FLAG_WRITTEN		(1ULL << 0)
+#define BTRFS_HEADER_FLAG_RELOC			(1ULL << 1)
+#define BTRFS_HEADER_FLAG_SUB_GENERATION	(1ULL << 2)
 
 /* Super block flags */
 /* Errors detected */
@@ -872,6 +884,7 @@ struct btrfs_dev_replace_item {
 #define BTRFS_BLOCK_GROUP_RAID6         (1ULL << 8)
 #define BTRFS_BLOCK_GROUP_RAID1C3       (1ULL << 9)
 #define BTRFS_BLOCK_GROUP_RAID1C4       (1ULL << 10)
+#define BTRFS_BLOCK_GROUP_REMAPPED	(1ULL << 20)
 #define BTRFS_BLOCK_GROUP_RESERVED	(BTRFS_AVAIL_ALLOC_BIT_SINGLE | \
 					 BTRFS_SPACE_INFO_GLOBAL_RSV)
 
@@ -1024,6 +1037,22 @@ struct btrfs_verity_descriptor_item {
 	 */
 	__le64 reserved[2];
 	__u8 encryption;
+} __attribute__ ((__packed__));
+
+struct btrfs_snapshot_item {
+	__le64 generation;
+	__le64 sub_generation;
+} __attribute__ ((__packed__));
+
+struct btrfs_drop_item {
+	__le64 refs;
+	__le64 generation;
+	__le64 sub_generation;
+} __attribute__ ((__packed__));
+
+struct btrfs_remap_item {
+	__le64 bytenr;
+	__le64 unused[2];
 } __attribute__ ((__packed__));
 
 #endif /* _BTRFS_CTREE_H_ */
