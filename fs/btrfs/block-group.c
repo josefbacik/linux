@@ -2456,14 +2456,18 @@ void btrfs_create_pending_block_groups(struct btrfs_trans_handle *trans)
 {
 	struct btrfs_fs_info *fs_info = trans->fs_info;
 	struct btrfs_block_group *block_group;
+	struct btrfs_transaction *transaction = trans->transaction;
 	int ret = 0;
 
-	while (!list_empty(&trans->new_bgs)) {
+	spin_lock(&transaction->bg_list_lock);
+	while (!list_empty(&transaction->new_bgs)) {
 		int index;
 
-		block_group = list_first_entry(&trans->new_bgs,
+		block_group = list_first_entry(&transaction->new_bgs,
 					       struct btrfs_block_group,
 					       bg_list);
+		list_del_init(&block_group->bg_list);
+		spin_unlock(&transaction->bg_list_lock);
 		if (ret)
 			goto next;
 
@@ -2506,8 +2510,9 @@ void btrfs_create_pending_block_groups(struct btrfs_trans_handle *trans)
 		/* Already aborted the transaction if it failed. */
 next:
 		btrfs_delayed_refs_rsv_release(fs_info, 1);
-		list_del_init(&block_group->bg_list);
+		spin_lock(&transaction->bg_list_lock);
 	}
+	spin_unlock(&transaction->bg_list_lock);
 	btrfs_trans_release_chunk_metadata(trans);
 }
 
@@ -2593,9 +2598,12 @@ struct btrfs_block_group *btrfs_make_block_group(struct btrfs_trans_handle *tran
 
 	link_block_group(cache);
 
-	list_add_tail(&cache->bg_list, &trans->new_bgs);
 	trans->delayed_ref_updates++;
 	btrfs_update_delayed_refs_rsv(trans);
+
+	spin_lock(&trans->trasaction->bg_list_lock);
+	list_add_tail(&cache->bg_list, &trans->transaction->new_bgs);
+	spin_unlock(&trans->trasaction->bg_list_lock);
 
 	set_avail_alloc_bits(fs_info, type);
 	return cache;

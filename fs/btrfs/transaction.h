@@ -54,6 +54,7 @@ struct btrfs_transaction {
 	struct list_head dev_update_list;
 	struct list_head switch_commits;
 	struct list_head dirty_bgs;
+	struct list_head new_bgs;
 
 	/*
 	 * There is no explicit lock which protects io_bgs, rather its
@@ -80,7 +81,7 @@ struct btrfs_transaction {
 	 * on each other
 	 */
 	struct mutex cache_write_mutex;
-	spinlock_t dirty_bgs_lock;
+	spinlock_t bg_list_lock;
 	/* Protected by spin lock fs_info->unused_bgs_lock. */
 	struct list_head deleted_bgs;
 	spinlock_t dropped_roots_lock;
@@ -137,7 +138,6 @@ struct btrfs_trans_handle {
 	bool in_fsync;
 	struct btrfs_root *root;
 	struct btrfs_fs_info *fs_info;
-	struct list_head new_bgs;
 };
 
 /*
