@@ -2956,7 +2956,6 @@ static int __btrfs_free_extent(struct btrfs_trans_handle *trans,
 	struct btrfs_extent_item *ei;
 	struct btrfs_extent_inline_ref *iref;
 	int ret;
-	int is_data;
 	int extent_slot = 0;
 	int found_extent = 0;
 	int num_to_del = 1;
@@ -2965,6 +2964,11 @@ static int __btrfs_free_extent(struct btrfs_trans_handle *trans,
 	u64 bytenr = node->bytenr;
 	u64 num_bytes = node->num_bytes;
 	bool skinny_metadata = btrfs_fs_incompat(info, SKINNY_METADATA);
+	bool is_data = owner_objectid >= BTRFS_FIRST_FREE_OBJECTID;
+
+	if (btrfs_fs_incompat(info, EXTENT_TREE_V2) && !is_data)
+		return do_free_extent_accounting(trans, bytenr, num_bytes,
+						 is_data);
 
 	extent_root = btrfs_extent_root(info, bytenr);
 	ASSERT(extent_root);
@@ -2972,8 +2976,6 @@ static int __btrfs_free_extent(struct btrfs_trans_handle *trans,
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
-
-	is_data = owner_objectid >= BTRFS_FIRST_FREE_OBJECTID;
 
 	if (!is_data && refs_to_drop != 1) {
 		btrfs_crit(info,
@@ -4705,6 +4707,9 @@ static int alloc_reserved_tree_block(struct btrfs_trans_handle *trans,
 	u64 flags = extent_op->flags_to_set;
 	bool skinny_metadata = btrfs_fs_incompat(fs_info, SKINNY_METADATA);
 
+	if (btrfs_fs_incompat(fs_info, EXTENT_TREE_V2))
+		goto out;
+
 	ref = btrfs_delayed_node_to_tree_ref(node);
 
 	extent_key.objectid = node->bytenr;
@@ -4758,7 +4763,7 @@ static int alloc_reserved_tree_block(struct btrfs_trans_handle *trans,
 
 	btrfs_mark_buffer_dirty(leaf);
 	btrfs_free_path(path);
-
+out:
 	return alloc_reserved_extent(trans, node->bytenr, fs_info->nodesize);
 }
 
