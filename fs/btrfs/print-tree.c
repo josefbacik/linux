@@ -24,6 +24,7 @@ static const struct root_name_map root_map[] = {
 	{ BTRFS_UUID_TREE_OBJECTID,		"UUID_TREE"		},
 	{ BTRFS_FREE_SPACE_TREE_OBJECTID,	"FREE_SPACE_TREE"	},
 	{ BTRFS_BLOCK_GROUP_TREE_OBJECTID,	"BLOCK_GROUP_TREE"	},
+	{ BTRFS_GC_TREE_OBJECTID,		"GC_TREE"		},
 	{ BTRFS_DATA_RELOC_TREE_OBJECTID,	"DATA_RELOC_TREE"	},
 };
 
@@ -347,6 +348,9 @@ void btrfs_print_leaf(struct extent_buffer *l)
 		case BTRFS_UUID_KEY_RECEIVED_SUBVOL:
 			print_uuid_item(l, btrfs_item_ptr_offset(l, i),
 					btrfs_item_size(l, i));
+			break;
+		case BTRFS_GC_INODE_ITEM_KEY:
+			pr_info("\t\tgc inode item\n");
 			break;
 		}
 	}
