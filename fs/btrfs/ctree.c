@@ -4789,3 +4789,26 @@ int btrfs_previous_extent_item(struct btrfs_root *root,
 	}
 	return 1;
 }
+
+/**
+ * btrfs_first_item - search the given root for the first item.
+ * @root: the root to search.
+ * @path: the path to use for the search.
+ * @return: 0 if it found something, 1 if nothing was found and < on error.
+ *
+ * Search down and find the first item in a tree.  If the root is empty return
+ * 1, otherwise we'll return 0 or < 0 if there was an error.
+ */
+int btrfs_first_item(struct btrfs_root *root, struct btrfs_path *path)
+{
+	struct btrfs_key key = {};
+	int ret;
+
+	ret = btrfs_search_slot(NULL, root, &key, path, 0, 0);
+	if (ret > 0) {
+		if (btrfs_header_nritems(path->nodes[0]) == 0)
+			return 1;
+		ret = 0;
+	}
+	return ret;
+}
