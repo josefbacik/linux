@@ -2268,6 +2268,7 @@ static void btrfs_stop_all_workers(struct btrfs_fs_info *fs_info)
 	 */
 	btrfs_destroy_workqueue(fs_info->endio_meta_workers);
 	btrfs_destroy_workqueue(fs_info->endio_meta_write_workers);
+	btrfs_destroy_workqueue(fs_info->gc_workers);
 }
 
 static void free_root_extent_buffers(struct btrfs_root *root)
@@ -2474,6 +2475,8 @@ static int btrfs_init_workqueues(struct btrfs_fs_info *fs_info)
 		btrfs_alloc_workqueue(fs_info, "qgroup-rescan", flags, 1, 0);
 	fs_info->discard_ctl.discard_workers =
 		alloc_workqueue("btrfs_discard", WQ_UNBOUND | WQ_FREEZABLE, 1);
+	fs_info->gc_workers =
+		btrfs_alloc_workqueue(fs_info, "garbage-collect", flags, max_active, 1);
 
 	if (!(fs_info->workers && fs_info->delalloc_workers &&
 	      fs_info->flush_workers &&
@@ -2483,7 +2486,7 @@ static int btrfs_init_workqueues(struct btrfs_fs_info *fs_info)
 	      fs_info->endio_freespace_worker && fs_info->rmw_workers &&
 	      fs_info->caching_workers && fs_info->fixup_workers &&
 	      fs_info->delayed_workers && fs_info->qgroup_rescan_workers &&
-	      fs_info->discard_ctl.discard_workers)) {
+	      fs_info->discard_ctl.discard_workers && fs_info->gc_workers)) {
 		return -ENOMEM;
 	}
 
@@ -4631,6 +4634,9 @@ void __cold close_ctree(struct btrfs_fs_info *fs_info)
 	 * clear that bit and wake up relocation so it can stop.
 	 */
 	btrfs_wake_unfinished_drop(fs_info);
+
+	/* Stop the gc workers. */
+	btrfs_flush_workqueue(fs_info->gc_workers);
 
 	/* wait for the qgroup rescan worker to stop */
 	btrfs_qgroup_wait_for_completion(fs_info, false);

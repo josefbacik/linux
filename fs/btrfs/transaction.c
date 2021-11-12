@@ -22,6 +22,7 @@
 #include "block-group.h"
 #include "space-info.h"
 #include "zoned.h"
+#include "gc-tree.h"
 
 #define BTRFS_ROOT_TRANS_TAG 0
 
@@ -2482,6 +2483,8 @@ int btrfs_commit_transaction(struct btrfs_trans_handle *trans)
 
 	btrfs_put_transaction(cur_trans);
 	btrfs_put_transaction(cur_trans);
+
+	btrfs_queue_gc_work(fs_info);
 
 	if (trans->type & __TRANS_FREEZABLE)
 		sb_end_intwrite(fs_info->sb);

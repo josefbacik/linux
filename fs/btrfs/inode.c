@@ -55,6 +55,7 @@
 #include "zoned.h"
 #include "subpage.h"
 #include "inode-item.h"
+#include "gc-tree.h"
 
 struct btrfs_iget_args {
 	u64 ino;
@@ -5234,6 +5235,17 @@ void btrfs_evict_inode(struct inode *inode)
 	rsv->size = btrfs_calc_metadata_size(fs_info, 1);
 	rsv->failfast = 1;
 
+	/*
+	 * If we have extent tree v2 enabled, insert our gc item and we're done,
+	 * remove the orphan item if we succeeded.
+	 */
+	if (btrfs_fs_incompat(fs_info, EXTENT_TREE_V2)) {
+		ret = btrfs_add_inode_gc_item(BTRFS_I(inode), rsv);
+		if (ret)
+			goto free_rsv;
+		goto delete_orphan;
+	}
+
 	btrfs_i_size_write(BTRFS_I(inode), 0);
 
 	while (1) {
@@ -5269,6 +5281,7 @@ void btrfs_evict_inode(struct inode *inode)
 	 * If it turns out that we are dropping too many of these, we might want
 	 * to add a mechanism for retrying these after a commit.
 	 */
+delete_orphan:
 	trans = btrfs_gc_rsv_refill_and_join(root, rsv);
 	if (!IS_ERR(trans)) {
 		trans->block_rsv = rsv;

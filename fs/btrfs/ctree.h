@@ -869,6 +869,9 @@ struct btrfs_fs_info {
 	struct btrfs_workqueue *fixup_workers;
 	struct btrfs_workqueue *delayed_workers;
 
+	/* Used to run the GC work. */
+	struct btrfs_workqueue *gc_workers;
+
 	struct task_struct *transaction_kthread;
 	struct task_struct *cleaner_kthread;
 	u32 thread_pool_size;
@@ -1009,6 +1012,9 @@ struct btrfs_fs_info {
 
 	struct semaphore uuid_tree_rescan_sem;
 
+	/* Used to run GC in the background. */
+	struct work_struct gc_work;
+
 	/* Used to reclaim the metadata space in the background. */
 	struct work_struct async_reclaim_work;
 	struct work_struct async_data_reclaim_work;
@@ -1144,8 +1150,12 @@ enum {
 	BTRFS_ROOT_QGROUP_FLUSHING,
 	/* We started the orphan cleanup for this root. */
 	BTRFS_ROOT_ORPHAN_CLEANUP,
+
 	/* This root has a drop operation that was started previously. */
 	BTRFS_ROOT_UNFINISHED_DROP,
+
+	/* GC is happening on this root. */
+	BTRFS_ROOT_GC_RUNNING,
 };
 
 static inline void btrfs_wake_unfinished_drop(struct btrfs_fs_info *fs_info)
