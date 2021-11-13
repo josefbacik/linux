@@ -2851,7 +2851,7 @@ enum btrfs_reserve_flush_enum {
 	 * - Running delalloc and waiting for ordered extents
 	 * - Allocating a new chunk
 	 */
-	BTRFS_RESERVE_FLUSH_EVICT,
+	BTRFS_RESERVE_FLUSH_GC,
 
 	/*
 	 * Flush space by above mentioned methods and by:

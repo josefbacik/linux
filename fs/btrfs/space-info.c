@@ -1398,7 +1398,7 @@ static int handle_reserve_ticket(struct btrfs_fs_info *fs_info,
 						priority_flush_states,
 						ARRAY_SIZE(priority_flush_states));
 		break;
-	case BTRFS_RESERVE_FLUSH_EVICT:
+	case BTRFS_RESERVE_FLUSH_GC:
 		priority_reclaim_metadata_space(fs_info, space_info, ticket,
 						evict_flush_states,
 						ARRAY_SIZE(evict_flush_states));
@@ -1456,7 +1456,7 @@ static inline void maybe_clamp_preempt(struct btrfs_fs_info *fs_info,
 static inline bool can_steal(enum btrfs_reserve_flush_enum flush)
 {
 	return (flush == BTRFS_RESERVE_FLUSH_ALL_STEAL ||
-		flush == BTRFS_RESERVE_FLUSH_EVICT);
+		flush == BTRFS_RESERVE_FLUSH_GC);
 }
 
 /**

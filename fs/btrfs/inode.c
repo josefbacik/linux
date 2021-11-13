@@ -5174,54 +5174,6 @@ static void evict_inode_truncate_pages(struct inode *inode)
 	spin_unlock(&io_tree->lock);
 }
 
-static struct btrfs_trans_handle *evict_refill_and_join(struct btrfs_root *root,
-							struct btrfs_block_rsv *rsv)
-{
-	struct btrfs_fs_info *fs_info = root->fs_info;
-	struct btrfs_trans_handle *trans;
-	u64 delayed_refs_extra = btrfs_calc_insert_metadata_size(fs_info, 1);
-	int ret;
-
-	/*
-	 * Eviction should be taking place at some place safe because of our
-	 * delayed iputs.  However the normal flushing code will run delayed
-	 * iputs, so we cannot use FLUSH_ALL otherwise we'll deadlock.
-	 *
-	 * We reserve the delayed_refs_extra here again because we can't use
-	 * btrfs_start_transaction(root, 0) for the same deadlocky reason as
-	 * above.  We reserve our extra bit here because we generate a ton of
-	 * delayed refs activity by truncating.
-	 *
-	 * BTRFS_RESERVE_FLUSH_EVICT will steal from the global_rsv if it can,
-	 * if we fail to make this reservation we can re-try without the
-	 * delayed_refs_extra so we can make some forward progress.
-	 */
-	ret = btrfs_block_rsv_refill(fs_info, rsv, rsv->size + delayed_refs_extra,
-				     BTRFS_RESERVE_FLUSH_EVICT);
-	if (ret) {
-		ret = btrfs_block_rsv_refill(fs_info, rsv, rsv->size,
-					     BTRFS_RESERVE_FLUSH_EVICT);
-		if (ret) {
-			btrfs_warn(fs_info,
-				   "could not allocate space for delete; will truncate on mount");
-			return ERR_PTR(-ENOSPC);
-		}
-		delayed_refs_extra = 0;
-	}
-
-	trans = btrfs_join_transaction(root);
-	if (IS_ERR(trans))
-		return trans;
-
-	if (delayed_refs_extra) {
-		trans->block_rsv = &fs_info->trans_block_rsv;
-		trans->bytes_reserved = delayed_refs_extra;
-		btrfs_block_rsv_migrate(rsv, trans->block_rsv,
-					delayed_refs_extra, 1);
-	}
-	return trans;
-}
-
 void btrfs_evict_inode(struct inode *inode)
 {
 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
@@ -5292,7 +5244,7 @@ void btrfs_evict_inode(struct inode *inode)
 			.min_type = 0,
 		};
 
-		trans = evict_refill_and_join(root, rsv);
+		trans = btrfs_gc_rsv_refill_and_join(root, rsv);
 		if (IS_ERR(trans))
 			goto free_rsv;
 
@@ -5317,7 +5269,7 @@ void btrfs_evict_inode(struct inode *inode)
 	 * If it turns out that we are dropping too many of these, we might want
 	 * to add a mechanism for retrying these after a commit.
 	 */
-	trans = evict_refill_and_join(root, rsv);
+	trans = btrfs_gc_rsv_refill_and_join(root, rsv);
 	if (!IS_ERR(trans)) {
 		trans->block_rsv = rsv;
 		btrfs_orphan_del(trans, BTRFS_I(inode));
