@@ -1958,61 +1958,51 @@ BTRFS_SETGET_STACK_FUNCS(stack_key_blockptr, struct btrfs_key_ptr,
 BTRFS_SETGET_STACK_FUNCS(stack_key_generation, struct btrfs_key_ptr,
 			 generation, 64);
 
-static inline u64 btrfs_node_blockptr(const struct extent_buffer *eb, int nr)
-{
-	unsigned long ptr;
-	ptr = offsetof(struct btrfs_node, ptrs) +
-		sizeof(struct btrfs_key_ptr) * nr;
-	return btrfs_key_blockptr(eb, (struct btrfs_key_ptr *)ptr);
-}
-
-static inline void btrfs_set_node_blockptr(const struct extent_buffer *eb,
-					   int nr, u64 val)
-{
-	unsigned long ptr;
-	ptr = offsetof(struct btrfs_node, ptrs) +
-		sizeof(struct btrfs_key_ptr) * nr;
-	btrfs_set_key_blockptr(eb, (struct btrfs_key_ptr *)ptr, val);
-}
-
-static inline u64 btrfs_node_ptr_generation(const struct extent_buffer *eb, int nr)
-{
-	unsigned long ptr;
-	ptr = offsetof(struct btrfs_node, ptrs) +
-		sizeof(struct btrfs_key_ptr) * nr;
-	return btrfs_key_generation(eb, (struct btrfs_key_ptr *)ptr);
-}
-
-static inline void btrfs_set_node_ptr_generation(const struct extent_buffer *eb,
-						 int nr, u64 val)
-{
-	unsigned long ptr;
-	ptr = offsetof(struct btrfs_node, ptrs) +
-		sizeof(struct btrfs_key_ptr) * nr;
-	btrfs_set_key_generation(eb, (struct btrfs_key_ptr *)ptr, val);
-}
-
 static inline unsigned long btrfs_node_key_ptr_offset(int nr)
 {
 	return offsetof(struct btrfs_node, ptrs) +
 		sizeof(struct btrfs_key_ptr) * nr;
 }
 
+static inline struct btrfs_key_ptr *btrfs_node_key_ptr(int nr)
+{
+	return (struct btrfs_key_ptr *)btrfs_node_key_ptr_offset(nr);
+}
+
+static inline u64 btrfs_node_blockptr(const struct extent_buffer *eb, int nr)
+{
+	return btrfs_key_blockptr(eb, btrfs_node_key_ptr(nr));
+}
+
+static inline void btrfs_set_node_blockptr(const struct extent_buffer *eb,
+					   int nr, u64 val)
+{
+	btrfs_set_key_blockptr(eb, btrfs_node_key_ptr(nr), val);
+}
+
+static inline u64 btrfs_node_ptr_generation(const struct extent_buffer *eb, int nr)
+{
+	return btrfs_key_generation(eb, btrfs_node_key_ptr(nr));
+}
+
+static inline void btrfs_set_node_ptr_generation(const struct extent_buffer *eb,
+						 int nr, u64 val)
+{
+	btrfs_set_key_generation(eb, btrfs_node_key_ptr(nr), val);
+}
+
 static inline void btrfs_node_key(const struct extent_buffer *eb,
 				  struct btrfs_disk_key *disk_key, int nr)
 {
-	unsigned long ptr = btrfs_node_key_ptr_offset(nr);
-	read_eb_member(eb, (struct btrfs_key_ptr *)ptr, struct btrfs_key_ptr,
-		       key, disk_key);
+	read_eb_member(eb, btrfs_node_key_ptr(nr), struct btrfs_key_ptr, key,
+		       disk_key);
 }
 
 static inline void btrfs_set_node_key(const struct extent_buffer *eb,
 				      struct btrfs_disk_key *disk_key, int nr)
 {
-	unsigned long ptr;
-	ptr = btrfs_node_key_ptr_offset(nr);
-	write_eb_member(eb, (struct btrfs_key_ptr *)ptr,
-		       struct btrfs_key_ptr, key, disk_key);
+	write_eb_member(eb, btrfs_node_key_ptr(nr), struct btrfs_key_ptr, key,
+			disk_key);
 }
 
 /* struct btrfs_item */
