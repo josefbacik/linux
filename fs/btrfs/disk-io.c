@@ -2566,7 +2566,6 @@ static int load_global_roots_objectid(struct btrfs_root *tree_root,
 {
 	struct btrfs_fs_info *fs_info = tree_root->fs_info;
 	struct btrfs_root *root;
-	u64 max_global_id = 0;
 	int ret;
 	struct btrfs_key key = {
 		.objectid = objectid,
@@ -2600,14 +2599,15 @@ static int load_global_roots_objectid(struct btrfs_root *tree_root,
 		btrfs_item_key_to_cpu(path->nodes[0], &key, path->slots[0]);
 		if (key.objectid != objectid)
 			break;
-		btrfs_release_path(path);
 
-		/*
-		 * Just worry about this for extent tree, it'll be the same for
-		 * everybody.
-		 */
-		if (objectid == BTRFS_EXTENT_TREE_OBJECTID)
-			max_global_id = max(max_global_id, key.offset);
+		if (key.offset >= fs_info->nr_global_roots) {
+			btrfs_err(fs_info, "invalid global root [%llu, %llu]\n",
+				  key.objectid, key.offset);
+			ret = -EUCLEAN;
+			break;
+		}
+
+		btrfs_release_path(path);
 
 		found = true;
 		root = read_tree_root_path(tree_root, path, &key);
@@ -2625,9 +2625,6 @@ static int load_global_roots_objectid(struct btrfs_root *tree_root,
 		key.offset++;
 	}
 	btrfs_release_path(path);
-
-	if (objectid == BTRFS_EXTENT_TREE_OBJECTID)
-		fs_info->nr_global_roots = max_global_id + 1;
 
 	if (!found || ret) {
 		if (objectid == BTRFS_CSUM_TREE_OBJECTID)
@@ -3226,6 +3223,7 @@ void btrfs_init_fs_info(struct btrfs_fs_info *fs_info)
 	fs_info->sectorsize = 4096;
 	fs_info->sectorsize_bits = ilog2(4096);
 	fs_info->stripesize = 4096;
+	fs_info->nr_global_roots = 1;
 
 	spin_lock_init(&fs_info->swapfile_pins_lock);
 	fs_info->swapfile_pins = RB_ROOT;
@@ -3581,6 +3579,9 @@ int __cold open_ctree(struct super_block *sb, struct btrfs_fs_devices *fs_device
 	fs_info->sectorsize_bits = ilog2(sectorsize);
 	fs_info->csums_per_leaf = BTRFS_MAX_ITEM_SIZE(fs_info) / fs_info->csum_size;
 	fs_info->stripesize = stripesize;
+
+	if (btrfs_fs_incompat(fs_info, EXTENT_TREE_V2))
+		fs_info->nr_global_roots = btrfs_super_nr_global_roots(disk_super);
 
 	ret = btrfs_parse_options(fs_info, options, sb->s_flags);
 	if (ret) {
