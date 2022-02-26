@@ -53,8 +53,8 @@ static inline void memmove_leaf_data(const struct extent_buffer *dst,
 				     unsigned long src_offset,
 				     unsigned long len)
 {
-	dst_offset += BTRFS_LEAF_DATA_OFFSET;
-	src_offset += BTRFS_LEAF_DATA_OFFSET;
+	dst_offset += BTRFS_LEAF_DATA_OFFSET(dst);
+	src_offset += BTRFS_LEAF_DATA_OFFSET(dst);
 	memmove_extent_buffer(dst, dst_offset, src_offset, len);
 }
 
@@ -63,8 +63,8 @@ static inline void copy_leaf_data(const struct extent_buffer *dst,
 				  unsigned long dst_offset,
 				  unsigned long src_offset, unsigned long len)
 {
-	dst_offset += BTRFS_LEAF_DATA_OFFSET;
-	src_offset += BTRFS_LEAF_DATA_OFFSET;
+	dst_offset += BTRFS_LEAF_DATA_OFFSET(dst);
+	src_offset += BTRFS_LEAF_DATA_OFFSET(dst);
 	copy_extent_buffer(dst, src, dst_offset, src_offset, len);
 }
 
