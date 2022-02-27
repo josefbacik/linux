@@ -496,6 +496,7 @@ struct btrfs_free_space_header {
 
 #define BTRFS_HEADER_FLAG_WRITTEN	(1ULL << 0)
 #define BTRFS_HEADER_FLAG_RELOC		(1ULL << 1)
+#define BTRFS_HEADER_FLAG_V2		(1ULL << 2)
 
 /* Super block flags */
 /* Errors detected */

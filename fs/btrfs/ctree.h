@@ -179,6 +179,11 @@ struct btrfs_header {
 	u8 level;
 } __attribute__ ((__packed__));
 
+struct btrfs_header_v2 {
+	struct btrfs_header header_v1;
+	__le64 snapshot_id;
+} __attribute__ ((__packed__));
+
 /*
  * this is a very generous portion of the super block, giving us
  * room to translate 14 chunks with 3 stripes each.
@@ -373,6 +378,11 @@ struct btrfs_leaf {
 	struct btrfs_item items[];
 } __attribute__ ((__packed__));
 
+struct btrfs_leaf_v2 {
+	struct btrfs_header_v2 header;
+	struct btrfs_item items[];
+} __attribute__ ((__packed__));
+
 /*
  * all non-leaf blocks are nodes, they hold only keys and pointers to
  * other blocks
@@ -385,6 +395,11 @@ struct btrfs_key_ptr {
 
 struct btrfs_node {
 	struct btrfs_header header;
+	struct btrfs_key_ptr ptrs[];
+} __attribute__ ((__packed__));
+
+struct btrfs_node_v2 {
+	struct btrfs_header_v2 header;
 	struct btrfs_key_ptr ptrs[];
 } __attribute__ ((__packed__));
 
@@ -2235,12 +2250,16 @@ BTRFS_SETGET_HEADER_FUNCS(header_owner, struct btrfs_header, owner, 64);
 BTRFS_SETGET_HEADER_FUNCS(header_nritems, struct btrfs_header, nritems, 32);
 BTRFS_SETGET_HEADER_FUNCS(header_flags, struct btrfs_header, flags, 64);
 BTRFS_SETGET_HEADER_FUNCS(header_level, struct btrfs_header, level, 8);
+BTRFS_SETGET_HEADER_FUNCS(header_snapshot_id, struct btrfs_header_v2,
+			  snapshot_id, 64);
 BTRFS_SETGET_STACK_FUNCS(stack_header_generation, struct btrfs_header,
 			 generation, 64);
 BTRFS_SETGET_STACK_FUNCS(stack_header_owner, struct btrfs_header, owner, 64);
 BTRFS_SETGET_STACK_FUNCS(stack_header_nritems, struct btrfs_header,
 			 nritems, 32);
 BTRFS_SETGET_STACK_FUNCS(stack_header_bytenr, struct btrfs_header, bytenr, 64);
+BTRFS_SETGET_STACK_FUNCS(stack_header_snapshot_id, struct btrfs_header_v2,
+			 snapshot_id, 64);
 
 static inline int btrfs_header_flag(const struct extent_buffer *eb, u64 flag)
 {
