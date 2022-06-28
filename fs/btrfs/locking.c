@@ -194,6 +194,22 @@ struct extent_buffer *btrfs_read_lock_root_node(struct btrfs_root *root)
 	return eb;
 }
 
+struct extent_buffer *btrfs_try_read_lock_root_node(struct btrfs_root *root)
+{
+	struct extent_buffer *eb;
+
+	while (1) {
+		eb = btrfs_root_node(root);
+		if (!btrfs_try_tree_read_lock(eb))
+			return ERR_PTR(-EWOULDBLOCK);
+		if (eb == root->node)
+			break;
+		btrfs_tree_read_unlock(eb);
+		free_extent_buffer(eb);
+	}
+	return eb;
+}
+
 /*
  * DREW locks
  * ==========
