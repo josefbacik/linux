@@ -1411,7 +1411,7 @@ static noinline int
 lock_and_cleanup_extent_if_need(struct btrfs_inode *inode, struct page **pages,
 				size_t num_pages, loff_t pos,
 				size_t write_bytes,
-				u64 *lockstart, u64 *lockend,
+				u64 *lockstart, u64 *lockend, bool nowait,
 				struct extent_state **cached_state)
 {
 	struct btrfs_fs_info *fs_info = inode->root->fs_info;
@@ -1425,6 +1425,13 @@ lock_and_cleanup_extent_if_need(struct btrfs_inode *inode, struct page **pages,
 
 	if (start_pos < inode->vfs_inode.i_size) {
 		struct btrfs_ordered_extent *ordered;
+
+		if (nowait) {
+			if (!btrfs_try_lock_ordered_range(inode, start_pos,
+							  last_pos))
+				return -EWOULDBLOCK;
+			goto locked;
+		}
 
 		lock_extent_bits(&inode->io_tree, start_pos, last_pos,
 				cached_state);
@@ -1445,7 +1452,7 @@ lock_and_cleanup_extent_if_need(struct btrfs_inode *inode, struct page **pages,
 		}
 		if (ordered)
 			btrfs_put_ordered_extent(ordered);
-
+locked:
 		*lockstart = start_pos;
 		*lockend = last_pos;
 		ret = 1;
@@ -1612,8 +1619,9 @@ static noinline ssize_t btrfs_buffered_write(struct kiocb *iocb,
 	bool force_page_uptodate = false;
 	loff_t old_isize = i_size_read(inode);
 	unsigned int ilock_flags = 0;
+	bool nowait = iocb->ki_flags & IOCB_NOWAIT;
 
-	if (iocb->ki_flags & IOCB_NOWAIT)
+	if (nowait)
 		ilock_flags |= BTRFS_ILOCK_TRY;
 
 	ret = btrfs_inode_lock(inode, ilock_flags);
@@ -1669,9 +1677,14 @@ static noinline ssize_t btrfs_buffered_write(struct kiocb *iocb,
 		extent_changeset_release(data_reserved);
 		ret = btrfs_check_data_free_space(BTRFS_I(inode),
 						  &data_reserved, pos,
-						  write_bytes, false);
+						  write_bytes, nowait);
 		if (ret < 0) {
 			int tmp;
+
+			if (ret == -EWOULDBLOCK) {
+				ret = -EAGAIN;
+				break;
+			}
 
 			/*
 			 * If we don't have to COW at the offset, reserve
@@ -1679,7 +1692,7 @@ static noinline ssize_t btrfs_buffered_write(struct kiocb *iocb,
 			 * requested here.
 			 */
 			tmp = btrfs_check_nocow_lock(BTRFS_I(inode), pos,
-						     &write_bytes, false);
+						     &write_bytes, nowait);
 			if (tmp < 0)
 				ret = tmp;
 			if (tmp > 0)
@@ -1696,7 +1709,7 @@ static noinline ssize_t btrfs_buffered_write(struct kiocb *iocb,
 		WARN_ON(reserve_bytes == 0);
 		ret = btrfs_delalloc_reserve_metadata(BTRFS_I(inode),
 						      reserve_bytes,
-						      reserve_bytes, false);
+						      reserve_bytes, nowait);
 		if (ret) {
 			if (!only_release_metadata)
 				btrfs_free_reserved_data_space(BTRFS_I(inode),
@@ -1714,6 +1727,7 @@ again:
 		 * pages we want, so we don't really need to worry about the
 		 * contents of pages from loop to loop
 		 */
+		/* FIXME: THIS NEEDS TO BE CONVERTED TO NOWAIT */
 		ret = prepare_pages(inode, pages, num_pages,
 				    pos, write_bytes,
 				    force_page_uptodate);
@@ -1726,7 +1740,7 @@ again:
 		extents_locked = lock_and_cleanup_extent_if_need(
 				BTRFS_I(inode), pages,
 				num_pages, pos, write_bytes, &lockstart,
-				&lockend, &cached_state);
+				&lockend, nowait, &cached_state);
 		if (extents_locked < 0) {
 			if (extents_locked == -EAGAIN)
 				goto again;
