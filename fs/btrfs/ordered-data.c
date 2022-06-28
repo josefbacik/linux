@@ -1041,6 +1041,23 @@ void btrfs_lock_and_flush_ordered_range(struct btrfs_inode *inode, u64 start,
 	}
 }
 
+int btrfs_try_lock_ordered_range(struct btrfs_inode *inode, u64 start, u64 end)
+{
+	struct btrfs_ordered_extent *ordered;
+
+	if (!try_lock_extent(&inode->io_tree, start, end))
+		return 0;
+
+	ordered = btrfs_lookup_ordered_range(inode, start, end - start + 1);
+	if (!ordered)
+		return 1;
+
+	btrfs_put_ordered_extent(ordered);
+	unlock_extent(&inode->io_tree, start, end);
+	return 0;
+}
+
+
 static int clone_ordered_extent(struct btrfs_ordered_extent *ordered, u64 pos,
 				u64 len)
 {
