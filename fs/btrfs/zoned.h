@@ -5,6 +5,7 @@
 
 #include <linux/types.h>
 #include <linux/blkdev.h>
+#include "btrfs-printk.h"
 #include "volumes.h"
 #include "disk-io.h"
 #include "block-group.h"

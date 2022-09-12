@@ -2,6 +2,7 @@
 
 #include <linux/blkdev.h>
 #include <linux/iversion.h>
+#include "btrfs-printk.h"
 #include "compression.h"
 #include "ctree.h"
 #include "delalloc-space.h"

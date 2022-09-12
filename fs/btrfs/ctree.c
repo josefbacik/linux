@@ -8,6 +8,7 @@
 #include <linux/rbtree.h>
 #include <linux/mm.h>
 #include <linux/error-injection.h>
+#include "btrfs-printk.h"
 #include "ctree.h"
 #include "disk-io.h"
 #include "transaction.h"

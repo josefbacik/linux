@@ -82,6 +82,7 @@
 #include <linux/mm.h>
 #include <linux/string.h>
 #include <crypto/hash.h>
+#include "btrfs-printk.h"
 #include "ctree.h"
 #include "disk-io.h"
 #include "transaction.h"

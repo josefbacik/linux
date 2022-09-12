@@ -5,6 +5,7 @@
  */
 
 #include <linux/slab.h>
+#include "btrfs-printk.h"
 #include "ulist.h"
 #include "ctree.h"
 

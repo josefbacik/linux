@@ -13,6 +13,7 @@
 #include <linux/bio.h>
 #include <linux/lzo.h>
 #include <linux/refcount.h>
+#include "btrfs-printk.h"
 #include "compression.h"
 #include "ctree.h"
 

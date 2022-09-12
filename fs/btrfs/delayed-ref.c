@@ -6,6 +6,7 @@
 #include <linux/sched.h>
 #include <linux/slab.h>
 #include <linux/sort.h>
+#include "btrfs-printk.h"
 #include "ctree.h"
 #include "delayed-ref.h"
 #include "transaction.h"

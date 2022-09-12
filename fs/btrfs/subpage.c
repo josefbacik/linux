@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 #include <linux/slab.h>
+#include "btrfs-printk.h"
 #include "ctree.h"
 #include "subpage.h"
 #include "btrfs_inode.h"

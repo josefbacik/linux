@@ -11,6 +11,7 @@
 #include <linux/ratelimit.h>
 #include <linux/error-injection.h>
 #include <linux/sched/mm.h>
+#include "btrfs-printk.h"
 #include "misc.h"
 #include "ctree.h"
 #include "free-space-cache.h"

@@ -11,6 +11,7 @@
 #include <linux/bug.h>
 #include <crypto/hash.h>
 
+#include "btrfs-printk.h"
 #include "ctree.h"
 #include "discard.h"
 #include "disk-io.h"

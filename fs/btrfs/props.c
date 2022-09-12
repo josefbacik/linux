@@ -4,6 +4,7 @@
  */
 
 #include <linux/hashtable.h>
+#include "btrfs-printk.h"
 #include "props.h"
 #include "btrfs_inode.h"
 #include "transaction.h"

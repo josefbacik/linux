@@ -5,6 +5,7 @@
 
 #include <linux/kernel.h>
 #include <linux/sched/mm.h>
+#include "btrfs-printk.h"
 #include "ctree.h"
 #include "disk-io.h"
 #include "locking.h"

@@ -5,6 +5,7 @@
 
 #include <linux/sched.h>
 #include <linux/stacktrace.h>
+#include "btrfs-printk.h"
 #include "ctree.h"
 #include "disk-io.h"
 #include "locking.h"

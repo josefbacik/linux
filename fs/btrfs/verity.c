@@ -10,6 +10,7 @@
 #include <linux/iversion.h>
 #include <linux/fsverity.h>
 #include <linux/sched/mm.h>
+#include "btrfs-printk.h"
 #include "ctree.h"
 #include "btrfs_inode.h"
 #include "transaction.h"

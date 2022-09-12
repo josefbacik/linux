@@ -6,6 +6,7 @@
 #ifndef BTRFS_TREE_LOG_H
 #define BTRFS_TREE_LOG_H
 
+#include "btrfs-printk.h"
 #include "ctree.h"
 #include "transaction.h"
 
