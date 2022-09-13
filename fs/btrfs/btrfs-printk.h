@@ -4,7 +4,6 @@
 #define BTRFS_PRINTK_H
 
 #include <linux/printk.h>
-#include <asm/bug.h>
 
 struct btrfs_fs_info;
 struct btrfs_trans_handle;
@@ -174,27 +173,15 @@ do {								\
 } while (0)
 
 #ifdef CONFIG_BTRFS_ASSERT
-__cold __noreturn
-static inline void assertfail(const char *expr, const char *file, int line)
-{
-	pr_err("assertion failed: %s, in %s:%d\n", expr, file, line);
-	BUG();
-}
-
+__cold
+void btrfs_assertfail(const char *expr, const char *file, int line);
 #define ASSERT(expr)						\
-	(likely(expr) ? (void)0 : assertfail(#expr, __FILE__, __LINE__))
-
+	(likely(expr) ? (void)0 : btrfs_assertfail(#expr, __FILE__, __LINE__))
 #else
-static inline void assertfail(const char *expr, const char* file, int line) { }
 #define ASSERT(expr)	(void)(expr)
 #endif
 
-__cold
-static inline void btrfs_print_v0_err(struct btrfs_fs_info *fs_info)
-{
-	btrfs_err(fs_info,
-"Unsupported V0 extent filesystem detected. Aborting. Please re-create your filesystem with a newer kernel");
-}
+__cold void btrfs_print_v0_err(struct btrfs_fs_info *fs_info);
 
 __printf(5, 6)
 __cold
@@ -243,9 +230,6 @@ void __btrfs_panic(struct btrfs_fs_info *fs_info, const char *function,
  * will panic().  Otherwise we BUG() here.
  */
 #define btrfs_panic(fs_info, errno, fmt, args...)			\
-do {									\
-	__btrfs_panic(fs_info, __func__, __LINE__, errno, fmt, ##args);	\
-	BUG();								\
-} while (0)
+	__btrfs_panic(fs_info, __func__, __LINE__, errno, fmt, ##args)
 
 #endif /* BTRFS_PRINTK_H */

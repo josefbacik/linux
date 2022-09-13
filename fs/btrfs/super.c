@@ -307,6 +307,20 @@ void __cold _btrfs_printk(const struct btrfs_fs_info *fs_info, const char *fmt, 
 }
 #endif
 
+#ifdef CONFIG_BTRFS_ASSERT
+void __cold btrfs_assertfail(const char *expr, const char *file, int line)
+{
+	pr_err("assertion failed: %s, in %s:%d\n", expr, file, line);
+	BUG();
+}
+#endif
+
+void __cold btrfs_print_v0_err(struct btrfs_fs_info *fs_info)
+{
+	btrfs_err(fs_info,
+"Unsupported V0 extent filesystem detected. Aborting. Please re-create your filesystem with a newer kernel");
+}
+
 #if BITS_PER_LONG == 32
 void __cold btrfs_warn_32bit_limit(struct btrfs_fs_info *fs_info)
 {
@@ -402,7 +416,7 @@ void __btrfs_panic(struct btrfs_fs_info *fs_info, const char *function,
 	btrfs_crit(fs_info, "panic in %s:%d: %pV (errno=%d %s)",
 		   function, line, &vaf, errno, errstr);
 	va_end(args);
-	/* Caller calls BUG() */
+	BUG();
 }
 
 static void btrfs_put_super(struct super_block *sb)
