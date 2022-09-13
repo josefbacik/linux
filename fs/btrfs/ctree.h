@@ -63,19 +63,6 @@ struct btrfs_ioctl_encoded_io_args;
 
 #define BTRFS_OLDEST_GENERATION	0ULL
 
-/*
- * we can actually store much bigger names, but lets not confuse the rest
- * of linux
- */
-#define BTRFS_NAME_LEN 255
-
-/*
- * Theoretical limit is larger, but we keep this down to a sane
- * value. That should limit greatly the possibility of collisions on
- * inode ref items.
- */
-#define BTRFS_LINK_MAX 65535U
-
 #define BTRFS_EMPTY_DIR_SIZE 0
 
 #define BTRFS_DIRTY_METADATA_THRESH	SZ_32M
