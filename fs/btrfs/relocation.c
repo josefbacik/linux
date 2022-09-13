@@ -29,6 +29,7 @@
 #include "inode-item.h"
 #include "space-info.h"
 #include "fs.h"
+#include "item-accessors.h"
 
 /*
  * Relocation overview

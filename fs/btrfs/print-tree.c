@@ -7,6 +7,7 @@
 #include "ctree.h"
 #include "disk-io.h"
 #include "print-tree.h"
+#include "item-accessors.h"
 
 struct root_name_map {
 	u64 id;

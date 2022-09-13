@@ -24,6 +24,7 @@
 #include "qgroup.h"
 #include "misc.h"
 #include "fs.h"
+#include "item-accessors.h"
 
 /*
  * Structure name                       Path

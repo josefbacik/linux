@@ -20,6 +20,7 @@
 #include "disk-io.h"
 #include "props.h"
 #include "locking.h"
+#include "item-accessors.h"
 
 int btrfs_getxattr(struct inode *inode, const char *name,
 				void *buffer, size_t size)

@@ -37,6 +37,7 @@
 #include "zoned.h"
 #include "dev-replace.h"
 #include "fs.h"
+#include "item-accessors.h"
 
 #undef SCRAMBLE_DELAYED_REFS
 

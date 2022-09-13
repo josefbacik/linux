@@ -12,6 +12,7 @@
 #include "ctree.h"
 #include "extent_io.h"
 #include "locking.h"
+#include "item-accessors.h"
 
 /*
  * Lockdep class keys for extent_buffer->lock's in this root.  For a given

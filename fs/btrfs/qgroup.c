@@ -25,6 +25,7 @@
 #include "sysfs.h"
 #include "tree-mod-log.h"
 #include "fs.h"
+#include "item-accessors.h"
 
 /*
  * Helpers to access qgroup reservation

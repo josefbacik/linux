@@ -3,6 +3,7 @@
 #include "btrfs-printk.h"
 #include "ctree.h"
 #include "fs.h"
+#include "item-accessors.h"
 
 void __btrfs_set_fs_incompat(struct btrfs_fs_info *fs_info, u64 flag,
 			     const char *name)

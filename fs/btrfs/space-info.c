@@ -11,6 +11,7 @@
 #include "block-group.h"
 #include "zoned.h"
 #include "fs.h"
+#include "item-accessors.h"
 
 /*
  * HOW DOES SPACE RESERVATION WORK

@@ -17,6 +17,7 @@
 #include "disk-io.h"
 #include "locking.h"
 #include "fs.h"
+#include "item-accessors.h"
 
 /*
  * Implementation of the interface defined in struct fsverity_operations.
