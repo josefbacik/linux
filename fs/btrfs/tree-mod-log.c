@@ -3,6 +3,7 @@
 #include "btrfs-printk.h"
 #include "tree-mod-log.h"
 #include "disk-io.h"
+#include "fs.h"
 
 struct tree_mod_root {
 	u64 logical;

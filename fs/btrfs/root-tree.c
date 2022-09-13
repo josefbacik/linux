@@ -12,6 +12,7 @@
 #include "print-tree.h"
 #include "qgroup.h"
 #include "space-info.h"
+#include "fs.h"
 
 /*
  * Read a root item from the tree. In case we detect a root item smaller then
