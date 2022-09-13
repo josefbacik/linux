@@ -23,6 +23,7 @@
 #include "block-group.h"
 #include "qgroup.h"
 #include "misc.h"
+#include "fs.h"
 
 /*
  * Structure name                       Path
