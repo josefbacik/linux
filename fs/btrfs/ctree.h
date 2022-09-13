@@ -58,13 +58,6 @@ struct btrfs_ioctl_encoded_io_args;
 
 #define BTRFS_MAX_EXTENT_SIZE SZ_128M
 
-static inline unsigned long btrfs_chunk_item_size(int num_stripes)
-{
-	BUG_ON(num_stripes == 0);
-	return sizeof(struct btrfs_chunk) +
-		sizeof(struct btrfs_stripe) * (num_stripes - 1);
-}
-
 /*
  * Runtime (in-memory) states of filesystem
  */
