@@ -349,13 +349,26 @@ void __cold btrfs_err_32bit_limit(struct btrfs_fs_info *fs_info)
 __cold
 void __btrfs_abort_transaction(struct btrfs_trans_handle *trans,
 			       const char *function,
-			       unsigned int line, int errno, bool first_hit)
+			       unsigned int line, int errno)
 {
 	struct btrfs_fs_info *fs_info = trans->fs_info;
+	bool first = false;
+
+	/* Report first abort since mount */
+	if (!test_and_set_bit(BTRFS_FS_STATE_TRANS_ABORTED,
+			      &fs_info->fs_state)) {
+		first = true;
+		if (errno != -EIO && errno != -EROFS)
+			WARN(1, KERN_DEBUG
+			     "BTRFS: Transaction aborted (error %d)\n", errno);
+		else
+			btrfs_debug(fs_info, "Transaction aborted (error %d)",
+				    errno);
+	}
 
 	WRITE_ONCE(trans->aborted, errno);
 	WRITE_ONCE(trans->transaction->aborted, errno);
-	if (first_hit && errno == -ENOSPC)
+	if (first && errno == -ENOSPC)
 		btrfs_dump_space_info_for_trans_abort(fs_info);
 	/* Wake up anybody who may be waiting on this transaction */
 	wake_up(&fs_info->transaction_wait);
