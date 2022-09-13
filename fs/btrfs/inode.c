@@ -56,6 +56,7 @@
 #include "subpage.h"
 #include "inode-item.h"
 #include "fs.h"
+#include "item-accessors.h"
 
 struct btrfs_iget_args {
 	u64 ino;
