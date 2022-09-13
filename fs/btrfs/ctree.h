@@ -82,9 +82,6 @@ struct btrfs_ioctl_encoded_io_args;
 
 #define BTRFS_EMPTY_DIR_SIZE 0
 
-/* ioprio of readahead is set to idle */
-#define BTRFS_IOPRIO_READA (IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0))
-
 #define BTRFS_DIRTY_METADATA_THRESH	SZ_32M
 
 #define BTRFS_MAX_EXTENT_SIZE SZ_128M
