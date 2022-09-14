@@ -84,6 +84,19 @@ void btrfs_zoned_release_data_reloc_bg(struct btrfs_fs_info *fs_info, u64 logica
 int btrfs_zone_finish_one_bg(struct btrfs_fs_info *fs_info);
 int btrfs_zoned_activate_one_bg(struct btrfs_fs_info *fs_info,
 				struct btrfs_space_info *space_info, bool do_finish);
+bool btrfs_dev_is_sequential(struct btrfs_device *device, u64 pos);
+bool btrfs_dev_is_empty_zone(struct btrfs_device *device, u64 pos);
+void btrfs_dev_set_empty_zone_bit(struct btrfs_device *device, u64 pos,
+				  bool set);
+bool btrfs_check_device_zone_type(const struct btrfs_fs_info *fs_info,
+				  struct block_device *bdev);
+bool btrfs_can_zone_reset(struct btrfs_device *device, u64 physical, u64 length);
+void btrfs_zoned_meta_io_lock(struct btrfs_fs_info *fs_info);
+void btrfs_zoned_meta_io_unlock(struct btrfs_fs_info *fs_info);
+void btrfs_clear_treelog_bg(struct btrfs_block_group *bg);
+void btrfs_zoned_data_reloc_lock(struct btrfs_inode *inode);
+void btrfs_zoned_data_reloc_unlock(struct btrfs_inode *inode);
+bool btrfs_zoned_bg_is_full(const struct btrfs_block_group *bg);
 #else /* CONFIG_BLK_DEV_ZONED */
 static inline int btrfs_get_dev_zone(struct btrfs_device *device, u64 pos,
 				     struct blk_zone *zone)
@@ -263,43 +276,42 @@ static inline int btrfs_zoned_activate_one_bg(struct btrfs_fs_info *fs_info,
 	return 0;
 }
 
-#endif
-
 static inline bool btrfs_dev_is_sequential(struct btrfs_device *device, u64 pos)
 {
-	struct btrfs_zoned_device_info *zone_info = device->zone_info;
-
-	if (!zone_info)
-		return false;
-
-	return test_bit(pos >> zone_info->zone_size_shift, zone_info->seq_zones);
+	return false;
 }
 
 static inline bool btrfs_dev_is_empty_zone(struct btrfs_device *device, u64 pos)
 {
-	struct btrfs_zoned_device_info *zone_info = device->zone_info;
-
-	if (!zone_info)
-		return true;
-
-	return test_bit(pos >> zone_info->zone_size_shift, zone_info->empty_zones);
+	return true;
 }
 
 static inline void btrfs_dev_set_empty_zone_bit(struct btrfs_device *device,
-						u64 pos, bool set)
+						u64 pos, bool set) { }
+
+static inline bool btrfs_check_device_zone_type(const struct btrfs_fs_info *fs_info,
+						struct block_device *bdev)
 {
-	struct btrfs_zoned_device_info *zone_info = device->zone_info;
-	unsigned int zno;
-
-	if (!zone_info)
-		return;
-
-	zno = pos >> zone_info->zone_size_shift;
-	if (set)
-		set_bit(zno, zone_info->empty_zones);
-	else
-		clear_bit(zno, zone_info->empty_zones);
+	return true;
 }
+
+static inline bool btrfs_can_zone_reset(struct btrfs_device *device,
+					u64 physical, u64 length)
+{
+	return false;
+}
+
+static inline void btrfs_zoned_meta_io_lock(struct btrfs_fs_info *fs_info) { }
+static inline void btrfs_zoned_meta_io_unlock(struct btrfs_fs_info *fs_info) { }
+static inline void btrfs_clear_treelog_bg(struct btrfs_block_group *bg) { }
+static inline void btrfs_zoned_data_reloc_lock(struct btrfs_inode *inode) { }
+static inline void btrfs_zoned_data_reloc_unlock(struct btrfs_inode *inode) { }
+
+static inline bool btrfs_zoned_bg_is_full(const struct btrfs_block_group *bg)
+{
+	return false;
+}
+#endif
 
 static inline void btrfs_dev_set_zone_empty(struct btrfs_device *device, u64 pos)
 {
@@ -310,88 +322,4 @@ static inline void btrfs_dev_clear_zone_empty(struct btrfs_device *device, u64 p
 {
 	btrfs_dev_set_empty_zone_bit(device, pos, false);
 }
-
-static inline bool btrfs_check_device_zone_type(const struct btrfs_fs_info *fs_info,
-						struct block_device *bdev)
-{
-	if (btrfs_is_zoned(fs_info)) {
-		/*
-		 * We can allow a regular device on a zoned filesystem, because
-		 * we will emulate the zoned capabilities.
-		 */
-		if (!bdev_is_zoned(bdev))
-			return true;
-
-		return fs_info->zone_size ==
-			(bdev_zone_sectors(bdev) << SECTOR_SHIFT);
-	}
-
-	/* Do not allow Host Manged zoned device */
-	return bdev_zoned_model(bdev) != BLK_ZONED_HM;
-}
-
-static inline bool btrfs_can_zone_reset(struct btrfs_device *device,
-					u64 physical, u64 length)
-{
-	u64 zone_size;
-
-	if (!btrfs_dev_is_sequential(device, physical))
-		return false;
-
-	zone_size = device->zone_info->zone_size;
-	if (!IS_ALIGNED(physical, zone_size) || !IS_ALIGNED(length, zone_size))
-		return false;
-
-	return true;
-}
-
-static inline void btrfs_zoned_meta_io_lock(struct btrfs_fs_info *fs_info)
-{
-	if (!btrfs_is_zoned(fs_info))
-		return;
-	mutex_lock(&fs_info->zoned_meta_io_lock);
-}
-
-static inline void btrfs_zoned_meta_io_unlock(struct btrfs_fs_info *fs_info)
-{
-	if (!btrfs_is_zoned(fs_info))
-		return;
-	mutex_unlock(&fs_info->zoned_meta_io_lock);
-}
-
-static inline void btrfs_clear_treelog_bg(struct btrfs_block_group *bg)
-{
-	struct btrfs_fs_info *fs_info = bg->fs_info;
-
-	if (!btrfs_is_zoned(fs_info))
-		return;
-
-	spin_lock(&fs_info->treelog_bg_lock);
-	if (fs_info->treelog_bg == bg->start)
-		fs_info->treelog_bg = 0;
-	spin_unlock(&fs_info->treelog_bg_lock);
-}
-
-static inline void btrfs_zoned_data_reloc_lock(struct btrfs_inode *inode)
-{
-	struct btrfs_root *root = inode->root;
-
-	if (btrfs_is_data_reloc_root(root) && btrfs_is_zoned(root->fs_info))
-		mutex_lock(&root->fs_info->zoned_data_reloc_io_lock);
-}
-
-static inline void btrfs_zoned_data_reloc_unlock(struct btrfs_inode *inode)
-{
-	struct btrfs_root *root = inode->root;
-
-	if (btrfs_is_data_reloc_root(root) && btrfs_is_zoned(root->fs_info))
-		mutex_unlock(&root->fs_info->zoned_data_reloc_io_lock);
-}
-
-static inline bool btrfs_zoned_bg_is_full(const struct btrfs_block_group *bg)
-{
-	ASSERT(btrfs_is_zoned(bg->fs_info));
-	return (bg->alloc_offset == bg->zone_capacity);
-}
-
 #endif
