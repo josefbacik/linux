@@ -106,11 +106,7 @@ static inline void btrfs_destroy_dev_zone_info(struct btrfs_device *device) { }
 
 static inline int btrfs_check_zoned_mode(const struct btrfs_fs_info *fs_info)
 {
-	if (!btrfs_is_zoned(fs_info))
-		return 0;
-
-	btrfs_err(fs_info, "zoned block devices support is not enabled");
-	return -EOPNOTSUPP;
+	return 0;
 }
 
 static inline int btrfs_check_mountopts_zoned(struct btrfs_fs_info *info)
