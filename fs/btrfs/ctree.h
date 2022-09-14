@@ -56,7 +56,6 @@ struct btrfs_ioctl_encoded_io_args;
 
 #define BTRFS_SUPER_INFO_OFFSET			SZ_64K
 #define BTRFS_SUPER_INFO_SIZE			4096
-static_assert(sizeof(struct btrfs_super_block) == BTRFS_SUPER_INFO_SIZE);
 
 /*
  * The reserved space at the beginning of each device.
