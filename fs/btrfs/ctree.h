@@ -243,8 +243,6 @@ struct btrfs_swapfile_pin {
 	int bg_extent_count;
 };
 
-bool btrfs_pinned_by_swapfile(struct btrfs_fs_info *fs_info, void *ptr);
-
 /*
  * Exclusive operations (device replace, resize, device add/remove, balance)
  */
