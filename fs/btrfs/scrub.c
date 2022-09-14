@@ -4163,7 +4163,7 @@ static noinline_for_stack int scrub_supers(struct scrub_ctx *sctx,
 		if (bytenr + BTRFS_SUPER_INFO_SIZE >
 		    scrub_dev->commit_total_bytes)
 			break;
-		if (!btrfs_check_super_location(scrub_dev, bytenr))
+		if (btrfs_dev_is_sequential(scrub_dev, bytenr))
 			continue;
 
 		ret = scrub_sectors(sctx, bytenr, BTRFS_SUPER_INFO_SIZE, bytenr,

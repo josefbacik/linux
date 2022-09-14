@@ -330,15 +330,6 @@ static inline bool btrfs_check_device_zone_type(const struct btrfs_fs_info *fs_i
 	return bdev_zoned_model(bdev) != BLK_ZONED_HM;
 }
 
-static inline bool btrfs_check_super_location(struct btrfs_device *device, u64 pos)
-{
-	/*
-	 * On a non-zoned device, any address is OK. On a zoned device,
-	 * non-SEQUENTIAL WRITE REQUIRED zones are capable.
-	 */
-	return device->zone_info == NULL || !btrfs_dev_is_sequential(device, pos);
-}
-
 static inline bool btrfs_can_zone_reset(struct btrfs_device *device,
 					u64 physical, u64 length)
 {
