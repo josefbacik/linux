@@ -46,6 +46,13 @@ struct btrfs_ref;
 struct btrfs_bio;
 struct btrfs_ioctl_encoded_io_args;
 
+/* fs_info */
+struct reloc_control;
+struct btrfs_device;
+struct btrfs_fs_devices;
+struct btrfs_balance_control;
+struct btrfs_delayed_root;
+
 #define BTRFS_OLDEST_GENERATION	0ULL
 
 #define BTRFS_EMPTY_DIR_SIZE 0
@@ -207,13 +214,6 @@ struct btrfs_discard_ctl {
 	u64 discard_bitmap_bytes;
 	atomic64_t discard_bytes_saved;
 };
-
-/* fs_info */
-struct reloc_control;
-struct btrfs_device;
-struct btrfs_fs_devices;
-struct btrfs_balance_control;
-struct btrfs_delayed_root;
 
 /*
  * Exclusive operations (device replace, resize, device add/remove, balance)
