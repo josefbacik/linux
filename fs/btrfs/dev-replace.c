@@ -258,18 +258,10 @@ static int btrfs_init_dev_replace_tgtdev(struct btrfs_fs_info *fs_info,
 		return -EINVAL;
 	}
 
-	bdev = blkdev_get_by_path(device_path, FMODE_WRITE | FMODE_EXCL,
-				  fs_info->bdev_holder);
+	bdev = btrfs_open_device_for_adding(fs_info, device_path);
 	if (IS_ERR(bdev)) {
 		btrfs_err(fs_info, "target device %s is invalid!", device_path);
 		return PTR_ERR(bdev);
-	}
-
-	if (!btrfs_check_device_zone_type(fs_info, bdev)) {
-		btrfs_err(fs_info,
-		"dev-replace: zoned type of target device mismatch with filesystem");
-		ret = -EINVAL;
-		goto error;
 	}
 
 	sync_blockdev(bdev);

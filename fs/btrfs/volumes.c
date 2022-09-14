@@ -2583,6 +2583,26 @@ error:
 	return ret;
 }
 
+struct block_device *btrfs_open_device_for_adding(struct btrfs_fs_info *fs_info,
+						  const char *device_path)
+{
+	struct block_device *bdev;
+
+	bdev = blkdev_get_by_path(device_path, FMODE_WRITE | FMODE_EXCL,
+				  fs_info->bdev_holder);
+	if (IS_ERR(bdev))
+		return bdev;
+
+	if (!btrfs_check_device_zone_type(fs_info, bdev)) {
+		btrfs_err(fs_info,
+			  "dev-replace: zoned type of target device mismatch with filesystem");
+		blkdev_put(bdev, FMODE_EXCL);
+		return ERR_PTR(-EINVAL);
+	}
+
+	return bdev;
+}
+
 int btrfs_init_new_device(struct btrfs_fs_info *fs_info, const char *device_path)
 {
 	struct btrfs_root *root = fs_info->dev_root;
@@ -2602,15 +2622,9 @@ int btrfs_init_new_device(struct btrfs_fs_info *fs_info, const char *device_path
 	if (sb_rdonly(sb) && !fs_devices->seeding)
 		return -EROFS;
 
-	bdev = blkdev_get_by_path(device_path, FMODE_WRITE | FMODE_EXCL,
-				  fs_info->bdev_holder);
+	bdev = btrfs_open_device_for_adding(fs_info, device_path);
 	if (IS_ERR(bdev))
 		return PTR_ERR(bdev);
-
-	if (!btrfs_check_device_zone_type(fs_info, bdev)) {
-		ret = -EINVAL;
-		goto error;
-	}
 
 	if (fs_devices->seeding) {
 		seeding_dev = true;

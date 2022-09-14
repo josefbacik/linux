@@ -757,4 +757,6 @@ int btrfs_verify_dev_extents(struct btrfs_fs_info *fs_info);
 bool btrfs_repair_one_zone(struct btrfs_fs_info *fs_info, u64 logical);
 unsigned long btrfs_chunk_item_size(int num_stripes);
 bool btrfs_pinned_by_swapfile(struct btrfs_fs_info *fs_info, void *ptr);
+struct block_device *btrfs_open_device_for_adding(struct btrfs_fs_info *fs_info,
+						  const char *device_path);
 #endif
