@@ -71,9 +71,6 @@ typedef void (submit_bio_hook_t)(struct inode *inode, struct bio *bio,
 					 int mirror_num,
 					 enum btrfs_compression_type compress_type);
 
-typedef blk_status_t (extent_submit_bio_start_t)(struct inode *inode,
-		struct bio *bio, u64 dio_file_offset);
-
 #define INLINE_EXTENT_BUFFER_PAGES     (BTRFS_MAX_METADATA_BLOCKSIZE / PAGE_SIZE)
 struct extent_buffer {
 	u64 start;

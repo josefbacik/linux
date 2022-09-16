@@ -20,6 +20,9 @@
 struct btrfs_device;
 struct btrfs_fs_devices;
 
+typedef blk_status_t (extent_submit_bio_start_t)(struct inode *inode,
+		struct bio *bio, u64 dio_file_offset);
+
 u64 btrfs_sb_offset(int mirror);
 void btrfs_check_leaked_roots(struct btrfs_fs_info *fs_info);
 void btrfs_init_fs_info(struct btrfs_fs_info *fs_info);
