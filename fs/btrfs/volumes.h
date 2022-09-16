@@ -17,20 +17,6 @@ extern struct mutex uuid_mutex;
 
 #define BTRFS_STRIPE_LEN	SZ_64K
 
-/* Used by sanity check for btrfs_raid_types. */
-#define const_ffs(n) (__builtin_ctzll(n) + 1)
-
-/*
- * The conversion from BTRFS_BLOCK_GROUP_* bits to btrfs_raid_type requires
- * RAID0 always to be the lowest profile bit.
- * Although it's part of on-disk format and should never change, do extra
- * compile-time sanity checks.
- */
-static_assert(const_ffs(BTRFS_BLOCK_GROUP_RAID0) <
-	      const_ffs(BTRFS_BLOCK_GROUP_PROFILE_MASK & ~BTRFS_BLOCK_GROUP_RAID0));
-static_assert(const_ilog2(BTRFS_BLOCK_GROUP_RAID0) >
-	      ilog2(BTRFS_BLOCK_GROUP_TYPE_MASK));
-
 /* ilog2() can handle both constants and variables */
 #define BTRFS_BG_FLAG_TO_INDEX(profile)					\
 	ilog2((profile) >> (ilog2(BTRFS_BLOCK_GROUP_RAID0) - 1))
