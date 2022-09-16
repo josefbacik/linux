@@ -2148,6 +2148,19 @@ static inline bool skip_inode_logging(const struct btrfs_log_ctx *ctx)
 	return false;
 }
 
+static inline void btrfs_release_log_ctx_extents(struct btrfs_log_ctx *ctx)
+{
+	struct btrfs_ordered_extent *ordered;
+	struct btrfs_ordered_extent *tmp;
+
+	ASSERT(inode_is_locked(ctx->inode));
+
+	list_for_each_entry_safe(ordered, tmp, &ctx->ordered_extents, log_list) {
+		list_del_init(&ordered->log_list);
+		btrfs_put_ordered_extent(ordered);
+	}
+}
+
 /*
  * fsync call for both files and directories.  This logs the inode into
  * the tree log instead of forcing full commits whenever possible.

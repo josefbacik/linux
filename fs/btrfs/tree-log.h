@@ -52,19 +52,6 @@ static inline void btrfs_init_log_ctx(struct btrfs_log_ctx *ctx,
 	ctx->logging_conflict_inodes = false;
 }
 
-static inline void btrfs_release_log_ctx_extents(struct btrfs_log_ctx *ctx)
-{
-	struct btrfs_ordered_extent *ordered;
-	struct btrfs_ordered_extent *tmp;
-
-	ASSERT(inode_is_locked(ctx->inode));
-
-	list_for_each_entry_safe(ordered, tmp, &ctx->ordered_extents, log_list) {
-		list_del_init(&ordered->log_list);
-		btrfs_put_ordered_extent(ordered);
-	}
-}
-
 static inline void btrfs_set_log_full_commit(struct btrfs_trans_handle *trans)
 {
 	WRITE_ONCE(trans->fs_info->last_trans_log_full_commit, trans->transid);
