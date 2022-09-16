@@ -52,11 +52,7 @@ static inline void btrfs_init_log_ctx(struct btrfs_log_ctx *ctx,
 	ctx->logging_conflict_inodes = false;
 }
 
-static inline void btrfs_set_log_full_commit(struct btrfs_trans_handle *trans)
-{
-	WRITE_ONCE(trans->fs_info->last_trans_log_full_commit, trans->transid);
-}
-
+void btrfs_set_log_full_commit(struct btrfs_trans_handle *trans);
 int btrfs_sync_log(struct btrfs_trans_handle *trans,
 		   struct btrfs_root *root, struct btrfs_log_ctx *ctx);
 int btrfs_free_log(struct btrfs_trans_handle *trans, struct btrfs_root *root);

@@ -116,6 +116,11 @@ static inline int btrfs_need_log_full_commit(struct btrfs_trans_handle *trans)
 		trans->transid;
 }
 
+void btrfs_set_log_full_commit(struct btrfs_trans_handle *trans)
+{
+	WRITE_ONCE(trans->fs_info->last_trans_log_full_commit, trans->transid);
+}
+
 /*
  * tree logging is a special write ahead log used to make sure that
  * fsyncs and O_SYNCs can happen without doing full tree commits.
