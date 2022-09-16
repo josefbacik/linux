@@ -110,6 +110,12 @@ static noinline int replay_dir_deletes(struct btrfs_trans_handle *trans,
 				       u64 dirid, int del_all);
 static void wait_log_commit(struct btrfs_root *root, int transid);
 
+static inline int btrfs_need_log_full_commit(struct btrfs_trans_handle *trans)
+{
+	return READ_ONCE(trans->fs_info->last_trans_log_full_commit) ==
+		trans->transid;
+}
+
 /*
  * tree logging is a special write ahead log used to make sure that
  * fsyncs and O_SYNCs can happen without doing full tree commits.

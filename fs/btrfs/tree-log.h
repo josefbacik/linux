@@ -70,12 +70,6 @@ static inline void btrfs_set_log_full_commit(struct btrfs_trans_handle *trans)
 	WRITE_ONCE(trans->fs_info->last_trans_log_full_commit, trans->transid);
 }
 
-static inline int btrfs_need_log_full_commit(struct btrfs_trans_handle *trans)
-{
-	return READ_ONCE(trans->fs_info->last_trans_log_full_commit) ==
-		trans->transid;
-}
-
 int btrfs_sync_log(struct btrfs_trans_handle *trans,
 		   struct btrfs_root *root, struct btrfs_log_ctx *ctx);
 int btrfs_free_log(struct btrfs_trans_handle *trans, struct btrfs_root *root);
