@@ -88,6 +88,14 @@ struct async_submit_bio {
 	blk_status_t status;
 };
 
+u64 btrfs_sb_offset(int mirror)
+{
+	u64 start = SZ_16K;
+	if (mirror)
+		return start << (BTRFS_SUPER_MIRROR_SHIFT * mirror);
+	return BTRFS_SUPER_INFO_OFFSET;
+}
+
 /*
  * Compute the csum of a btree block and store the result to provided buffer.
  */

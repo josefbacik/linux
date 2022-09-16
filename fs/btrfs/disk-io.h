@@ -17,17 +17,10 @@
  */
 #define BTRFS_BDEV_BLOCKSIZE	(4096)
 
-static inline u64 btrfs_sb_offset(int mirror)
-{
-	u64 start = SZ_16K;
-	if (mirror)
-		return start << (BTRFS_SUPER_MIRROR_SHIFT * mirror);
-	return BTRFS_SUPER_INFO_OFFSET;
-}
-
 struct btrfs_device;
 struct btrfs_fs_devices;
 
+u64 btrfs_sb_offset(int mirror);
 void btrfs_check_leaked_roots(struct btrfs_fs_info *fs_info);
 void btrfs_init_fs_info(struct btrfs_fs_info *fs_info);
 int btrfs_verify_level_key(struct extent_buffer *eb, int level,
