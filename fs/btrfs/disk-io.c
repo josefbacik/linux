@@ -2162,6 +2162,19 @@ static void free_root_pointers(struct btrfs_fs_info *info, bool free_chunk_root)
 		free_root_extent_buffers(info->chunk_root);
 }
 
+/*
+ * This function is used to grab the root, and avoid it is freed when we
+ * access it. But it doesn't ensure that the tree is not dropped.
+ */
+struct btrfs_root *btrfs_grab_root(struct btrfs_root *root)
+{
+	if (!root)
+		return NULL;
+	if (refcount_inc_not_zero(&root->refs))
+		return root;
+	return NULL;
+}
+
 void btrfs_put_root(struct btrfs_root *root)
 {
 	if (!root)

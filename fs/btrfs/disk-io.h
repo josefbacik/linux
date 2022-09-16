@@ -81,19 +81,7 @@ void btrfs_submit_metadata_bio(struct inode *inode, struct bio *bio, int mirror_
 struct btrfs_root *btrfs_alloc_dummy_root(struct btrfs_fs_info *fs_info);
 #endif
 
-/*
- * This function is used to grab the root, and avoid it is freed when we
- * access it. But it doesn't ensure that the tree is not dropped.
- */
-static inline struct btrfs_root *btrfs_grab_root(struct btrfs_root *root)
-{
-	if (!root)
-		return NULL;
-	if (refcount_inc_not_zero(&root->refs))
-		return root;
-	return NULL;
-}
-
+struct btrfs_root *btrfs_grab_root(struct btrfs_root *root);
 void btrfs_put_root(struct btrfs_root *root);
 void btrfs_mark_buffer_dirty(struct extent_buffer *buf);
 int btrfs_buffer_uptodate(struct extent_buffer *buf, u64 parent_transid,
