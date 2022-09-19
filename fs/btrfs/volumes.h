@@ -17,10 +17,6 @@ extern struct mutex uuid_mutex;
 
 #define BTRFS_STRIPE_LEN	SZ_64K
 
-/* ilog2() can handle both constants and variables */
-#define BTRFS_BG_FLAG_TO_INDEX(profile)					\
-	ilog2((profile) >> (ilog2(BTRFS_BLOCK_GROUP_RAID0) - 1))
-
 /* There is a helper to convert the BTRFS_BLOCK_GROUP_* flags to the appropriate
  * enum, so these must be declared in the order of their on-disk values.  SINGLE
  * is the special one as it doesn't have an on-disk bit.
@@ -356,15 +352,6 @@ struct btrfs_fs_devices {
 };
 
 #define BTRFS_BIO_INLINE_CSUM_SIZE	64
-
-#define BTRFS_MAX_DEVS(info) ((BTRFS_MAX_ITEM_SIZE(info)	\
-			- sizeof(struct btrfs_chunk))		\
-			/ sizeof(struct btrfs_stripe) + 1)
-
-#define BTRFS_MAX_DEVS_SYS_CHUNK ((BTRFS_SYSTEM_CHUNK_ARRAY_SIZE	\
-				- 2 * sizeof(struct btrfs_disk_key)	\
-				- 2 * sizeof(struct btrfs_chunk))	\
-				/ sizeof(struct btrfs_stripe) + 1)
 
 /*
  * Maximum number of sectors for a single bio to limit the size of the
