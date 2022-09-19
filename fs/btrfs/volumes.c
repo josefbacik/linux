@@ -8442,17 +8442,17 @@ void __cold btrfs_bioset_exit(void)
 	bioset_exit(&btrfs_bioset);
 }
 
-/* Used by sanity check for btrfs_raid_types. */
-#define const_ffs(n) (__builtin_ctzll(n) + 1)
-
 /*
  * The conversion from BTRFS_BLOCK_GROUP_* bits to btrfs_raid_type requires
- * RAID0 always to be the lowest profile bit.
+ * that the indexes line up with the enum values.
  * Although it's part of on-disk format and should never change, do extra
  * compile-time sanity checks.
  */
-static_assert(const_ffs(BTRFS_BLOCK_GROUP_RAID0) <
-	      const_ffs(BTRFS_BLOCK_GROUP_PROFILE_MASK & ~BTRFS_BLOCK_GROUP_RAID0));
-static_assert(const_ilog2(BTRFS_BLOCK_GROUP_RAID0) >
-	      ilog2(BTRFS_BLOCK_GROUP_TYPE_MASK));
-
+static_assert(BTRFS_BG_FLAG_TO_INDEX(BTRFS_BLOCK_GROUP_RAID0) == BTRFS_RAID_RAID0);
+static_assert(BTRFS_BG_FLAG_TO_INDEX(BTRFS_BLOCK_GROUP_RAID1) == BTRFS_RAID_RAID1);
+static_assert(BTRFS_BG_FLAG_TO_INDEX(BTRFS_BLOCK_GROUP_DUP) == BTRFS_RAID_DUP);
+static_assert(BTRFS_BG_FLAG_TO_INDEX(BTRFS_BLOCK_GROUP_RAID10) == BTRFS_RAID_RAID10);
+static_assert(BTRFS_BG_FLAG_TO_INDEX(BTRFS_BLOCK_GROUP_RAID5) == BTRFS_RAID_RAID5);
+static_assert(BTRFS_BG_FLAG_TO_INDEX(BTRFS_BLOCK_GROUP_RAID6) == BTRFS_RAID_RAID6);
+static_assert(BTRFS_BG_FLAG_TO_INDEX(BTRFS_BLOCK_GROUP_RAID1C3) == BTRFS_RAID_RAID1C3);
+static_assert(BTRFS_BG_FLAG_TO_INDEX(BTRFS_BLOCK_GROUP_RAID1C4) == BTRFS_RAID_RAID1C4);
