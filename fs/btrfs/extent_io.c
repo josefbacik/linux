@@ -4952,6 +4952,7 @@ static int read_extent_buffer_subpage(struct extent_buffer *eb, int wait,
 	struct btrfs_fs_info *fs_info = eb->fs_info;
 	struct extent_io_tree *io_tree;
 	struct page *page = eb->pages[0];
+	struct extent_state *cached_state = NULL;
 	struct btrfs_bio_ctrl bio_ctrl = {
 		.mirror_num = mirror_num,
 	};
@@ -4963,10 +4964,11 @@ static int read_extent_buffer_subpage(struct extent_buffer *eb, int wait,
 
 	if (wait == WAIT_NONE) {
 		if (!try_lock_extent(io_tree, eb->start, eb->start + eb->len - 1,
-				     NULL))
+				     &cached_state))
 			return -EAGAIN;
 	} else {
-		ret = lock_extent(io_tree, eb->start, eb->start + eb->len - 1, NULL);
+		ret = lock_extent(io_tree, eb->start, eb->start + eb->len - 1,
+				  &cached_state);
 		if (ret < 0)
 			return ret;
 	}
@@ -4976,7 +4978,8 @@ static int read_extent_buffer_subpage(struct extent_buffer *eb, int wait,
 	    PageUptodate(page) ||
 	    btrfs_subpage_test_uptodate(fs_info, page, eb->start, eb->len)) {
 		set_bit(EXTENT_BUFFER_UPTODATE, &eb->bflags);
-		unlock_extent(io_tree, eb->start, eb->start + eb->len - 1, NULL);
+		unlock_extent(io_tree, eb->start, eb->start + eb->len - 1,
+			      &cached_state);
 		return ret;
 	}
 
@@ -5001,11 +5004,13 @@ static int read_extent_buffer_subpage(struct extent_buffer *eb, int wait,
 		atomic_dec(&eb->io_pages);
 	}
 	submit_one_bio(&bio_ctrl);
-	if (ret || wait != WAIT_COMPLETE)
+	if (ret || wait != WAIT_COMPLETE) {
+		free_extent_state(cached_state);
 		return ret;
+	}
 
 	wait_extent_bit(io_tree, eb->start, eb->start + eb->len - 1,
-			EXTENT_LOCKED, NULL);
+			EXTENT_LOCKED, &cached_state);
 	if (!test_bit(EXTENT_BUFFER_UPTODATE, &eb->bflags))
 		ret = -EIO;
 	return ret;
