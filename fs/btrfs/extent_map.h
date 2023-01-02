@@ -48,8 +48,10 @@ struct extent_map {
 	 */
 	u64 generation;
 	unsigned long flags;
+	struct fscrypt_extent_info *fscrypt_info;
 	refcount_t refs;
 	unsigned int compress_type;
+	unsigned int encryption_type;
 	struct list_head list;
 	struct list_head free_list;
 };
