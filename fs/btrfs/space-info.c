@@ -166,6 +166,14 @@ u64 __pure btrfs_space_info_used(struct btrfs_space_info *s_info,
 			  bool may_use_included)
 {
 	ASSERT(s_info);
+
+	if (s_info->active_total_bytes)
+		return s_info->bytes_reserved +
+			s_info->active_bytes_used +
+			s_info->active_bytes_pinned +
+			s_info->active_bytes_zone_unusable +
+			(may_use_included ? s_info->bytes_may_use : 0);
+
 	return s_info->bytes_used + s_info->bytes_reserved +
 		s_info->bytes_pinned + s_info->bytes_readonly +
 		s_info->bytes_zone_unusable +
@@ -296,6 +304,66 @@ out:
 	return ret;
 }
 
+static void update_block_group_activation(struct btrfs_block_group *block_group,
+					  bool activate)
+{
+	struct btrfs_fs_info *fs_info = block_group->fs_info;
+	struct btrfs_space_info *space_info = block_group->space_info;
+
+	lockdep_assert_held(&space_info->lock);
+
+	if (!test_bit(BTRFS_FS_ACTIVE_ZONE_TRACKING, &fs_info->flags))
+		return;
+
+	if (!test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+		      &block_group->runtime_flags))
+		return;
+
+	if (activate) {
+		space_info->active_total_bytes += block_group->length;
+		space_info->active_bytes_used += block_group->used;
+		space_info->active_bytes_pinned += block_group->pinned;
+		space_info->active_bytes_zone_unusable +=
+			block_group->zone_unusable;
+	} else {
+		space_info->active_total_bytes -= block_group->length;
+		space_info->active_bytes_used -= block_group->used;
+		space_info->active_bytes_pinned -= block_group->pinned;
+		space_info->active_bytes_zone_unusable -=
+			block_group->zone_unusable;
+	}
+}
+
+/*
+ * Set the block group as active and update the counters.
+ *
+ * @block_group: The block group we're activating.
+ *
+ * If we have BTRFS_FS_ACTIVE_ZONE_TRACKING, this will update
+ * ->active_* counters for the space_info and set
+ *  BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE on the block group.
+ */
+void btrfs_activate_block_group(struct btrfs_block_group *block_group)
+{
+	set_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE, &block_group->runtime_flags);
+	update_block_group_activation(block_group, true);
+}
+
+/*
+ * Deactivate the block group and update the counters.
+ *
+ * @block_group: The block group we're deactivating.
+ *
+ * If we have BTRFS_FS_ACTIVE_ZONE_TRACKING, this will update
+ * ->active_* counters for the space_info and clear
+ *  BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE on the block group.
+ */
+void btrfs_deactivate_block_group(struct btrfs_block_group *block_group)
+{
+	update_block_group_activation(block_group, false);
+	clear_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE, &block_group->runtime_flags);
+}
+
 void btrfs_add_bg_to_space_info(struct btrfs_fs_info *info,
 				struct btrfs_block_group *block_group)
 {
@@ -306,10 +374,10 @@ void btrfs_add_bg_to_space_info(struct btrfs_fs_info *info,
 
 	found = btrfs_find_space_info(info, block_group->flags);
 	ASSERT(found);
+	block_group->space_info = found;
+
 	spin_lock(&found->lock);
 	found->total_bytes += block_group->length;
-	if (test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE, &block_group->runtime_flags))
-		found->active_total_bytes += block_group->length;
 	found->disk_total += block_group->length * factor;
 	found->bytes_used += block_group->used;
 	found->disk_used += block_group->used * factor;
@@ -317,10 +385,10 @@ void btrfs_add_bg_to_space_info(struct btrfs_fs_info *info,
 	found->bytes_zone_unusable += block_group->zone_unusable;
 	if (block_group->length > 0)
 		found->full = 0;
+
+	update_block_group_activation(block_group, true);
 	btrfs_try_granting_tickets(info, found);
 	spin_unlock(&found->lock);
-
-	block_group->space_info = found;
 
 	index = btrfs_bg_flags_to_raid_index(block_group->flags);
 	down_write(&found->groups_sem);
@@ -521,6 +589,13 @@ static void __btrfs_dump_space_info(struct btrfs_fs_info *fs_info,
 		info->total_bytes, info->bytes_used, info->bytes_pinned,
 		info->bytes_reserved, info->bytes_may_use,
 		info->bytes_readonly, info->bytes_zone_unusable);
+	if (info->active_total_bytes == 0)
+		return;
+	btrfs_info(fs_info,
+"space_info active counters total=%llu, used=%llu, pinned=%llu, zone_unusable=%llu",
+		info->active_total_bytes, info->active_bytes_used,
+		info->active_bytes_pinned, info->active_bytes_zone_unusable);
+
 }
 
 void btrfs_dump_space_info(struct btrfs_fs_info *fs_info,

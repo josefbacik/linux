@@ -1900,8 +1900,7 @@ bool btrfs_zone_activate(struct btrfs_block_group *block_group)
 	}
 
 	/* Successfully activated all the zones */
-	set_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE, &block_group->runtime_flags);
-	space_info->active_total_bytes += block_group->length;
+	btrfs_activate_block_group(block_group);
 	spin_unlock(&block_group->lock);
 	btrfs_try_granting_tickets(fs_info, space_info);
 	spin_unlock(&space_info->lock);
@@ -1956,15 +1955,18 @@ static void wait_eb_writebacks(struct btrfs_block_group *block_group)
 static int do_zone_finish(struct btrfs_block_group *block_group, bool fully_written)
 {
 	struct btrfs_fs_info *fs_info = block_group->fs_info;
+	struct btrfs_space_info *space_info = block_group->space_info;
 	struct map_lookup *map;
 	const bool is_metadata = (block_group->flags &
 			(BTRFS_BLOCK_GROUP_METADATA | BTRFS_BLOCK_GROUP_SYSTEM));
 	int ret = 0;
 	int i;
 
+	spin_lock(&space_info->lock);
 	spin_lock(&block_group->lock);
 	if (!test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE, &block_group->runtime_flags)) {
 		spin_unlock(&block_group->lock);
+		spin_unlock(&space_info->lock);
 		return 0;
 	}
 
@@ -1972,6 +1974,7 @@ static int do_zone_finish(struct btrfs_block_group *block_group, bool fully_writ
 	if (is_metadata &&
 	    block_group->start + block_group->alloc_offset > block_group->meta_write_pointer) {
 		spin_unlock(&block_group->lock);
+		spin_unlock(&space_info->lock);
 		return -EAGAIN;
 	}
 
@@ -1984,6 +1987,7 @@ static int do_zone_finish(struct btrfs_block_group *block_group, bool fully_writ
 	 */
 	if (!fully_written) {
 		spin_unlock(&block_group->lock);
+		spin_unlock(&space_info->lock);
 
 		ret = btrfs_inc_block_group_ro(block_group, false);
 		if (ret)
@@ -1998,6 +2002,7 @@ static int do_zone_finish(struct btrfs_block_group *block_group, bool fully_writ
 		if (is_metadata)
 			wait_eb_writebacks(block_group);
 
+		spin_lock(&space_info->lock);
 		spin_lock(&block_group->lock);
 
 		/*
@@ -2007,23 +2012,26 @@ static int do_zone_finish(struct btrfs_block_group *block_group, bool fully_writ
 		if (!test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
 			      &block_group->runtime_flags)) {
 			spin_unlock(&block_group->lock);
+			spin_unlock(&space_info->lock);
 			btrfs_dec_block_group_ro(block_group);
 			return 0;
 		}
 
 		if (block_group->reserved) {
 			spin_unlock(&block_group->lock);
+			spin_unlock(&space_info->lock);
 			btrfs_dec_block_group_ro(block_group);
 			return -EAGAIN;
 		}
 	}
 
-	clear_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE, &block_group->runtime_flags);
+	btrfs_deactivate_block_group(block_group);
 	block_group->alloc_offset = block_group->zone_capacity;
 	block_group->free_space_ctl->free_space = 0;
 	btrfs_clear_treelog_bg(block_group);
 	btrfs_clear_data_reloc_bg(block_group);
 	spin_unlock(&block_group->lock);
+	spin_unlock(&space_info->lock);
 
 	map = block_group->physical_map;
 	for (i = 0; i < map->num_stripes; i++) {

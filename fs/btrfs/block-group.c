@@ -1166,6 +1166,9 @@ int btrfs_remove_block_group(struct btrfs_trans_handle *trans,
 		btrfs_put_caching_control(caching_ctl);
 	}
 
+	ASSERT(!test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+			 &block_group->runtime_flags));
+
 	spin_lock(&trans->transaction->dirty_bgs_lock);
 	WARN_ON(!list_empty(&block_group->dirty_list));
 	WARN_ON(!list_empty(&block_group->io_list));
@@ -1191,12 +1194,8 @@ int btrfs_remove_block_group(struct btrfs_trans_handle *trans,
 			< block_group->length);
 	}
 	block_group->space_info->total_bytes -= block_group->length;
-	if (test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE, &block_group->runtime_flags))
-		block_group->space_info->active_total_bytes -= block_group->length;
 	block_group->space_info->bytes_readonly -=
 		(block_group->length - block_group->zone_unusable);
-	block_group->space_info->bytes_zone_unusable -=
-		block_group->zone_unusable;
 	block_group->space_info->disk_total -= block_group->length * factor;
 
 	spin_unlock(&block_group->space_info->lock);
@@ -1377,10 +1376,14 @@ static int inc_block_group_ro(struct btrfs_block_group *cache, int force)
 
 	if (!ret) {
 		sinfo->bytes_readonly += num_bytes;
+		ASSERT(!test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+				 &cache->runtime_flags));
+
 		if (btrfs_is_zoned(cache->fs_info)) {
 			/* Migrate zone_unusable bytes to readonly */
 			sinfo->bytes_readonly += cache->zone_unusable;
 			sinfo->bytes_zone_unusable -= cache->zone_unusable;
+
 			cache->zone_unusable = 0;
 		}
 		cache->ro++;
@@ -1575,6 +1578,9 @@ void btrfs_delete_unused_bgs(struct btrfs_fs_info *fs_info)
 		}
 		spin_unlock(&fs_info->discard_ctl.lock);
 
+		ASSERT(!test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+				 &block_group->runtime_flags));
+
 		/* Reset pinned so btrfs_put_block_group doesn't complain */
 		spin_lock(&space_info->lock);
 		spin_lock(&block_group->lock);
@@ -1582,6 +1588,7 @@ void btrfs_delete_unused_bgs(struct btrfs_fs_info *fs_info)
 		btrfs_space_info_update_bytes_pinned(fs_info, space_info,
 						     -block_group->pinned);
 		space_info->bytes_readonly += block_group->pinned;
+
 		block_group->pinned = 0;
 
 		spin_unlock(&block_group->lock);
@@ -2876,6 +2883,9 @@ void btrfs_dec_block_group_ro(struct btrfs_block_group *cache)
 
 	BUG_ON(!cache->ro);
 
+	ASSERT(!test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+			 &cache->runtime_flags));
+
 	spin_lock(&sinfo->lock);
 	spin_lock(&cache->lock);
 	if (!--cache->ro) {
@@ -3513,6 +3523,11 @@ int btrfs_update_block_group(struct btrfs_trans_handle *trans,
 			space_info->bytes_reserved -= num_bytes;
 			space_info->bytes_used += num_bytes;
 			space_info->disk_used += num_bytes * factor;
+
+			if (test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+				     &cache->runtime_flags))
+				space_info->active_bytes_used += num_bytes;
+
 			spin_unlock(&cache->lock);
 			spin_unlock(&space_info->lock);
 		} else {
@@ -3523,6 +3538,12 @@ int btrfs_update_block_group(struct btrfs_trans_handle *trans,
 							     num_bytes);
 			space_info->bytes_used -= num_bytes;
 			space_info->disk_used -= num_bytes * factor;
+
+			if (test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+				     &cache->runtime_flags)) {
+				space_info->active_bytes_pinned += num_bytes;
+				space_info->active_bytes_used -= num_bytes;
+			}
 
 			reclaim = should_reclaim_block_group(cache, num_bytes);
 

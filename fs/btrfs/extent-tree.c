@@ -2530,6 +2530,11 @@ static int pin_down_extent(struct btrfs_trans_handle *trans,
 		cache->reserved -= num_bytes;
 		cache->space_info->bytes_reserved -= num_bytes;
 	}
+
+	if (test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+		     &cache->runtime_flags))
+		cache->space_info->active_bytes_pinned += num_bytes;
+
 	spin_unlock(&cache->lock);
 	spin_unlock(&cache->space_info->lock);
 
@@ -2725,6 +2730,14 @@ static int unpin_extent_range(struct btrfs_fs_info *fs_info,
 		spin_lock(&cache->lock);
 		cache->pinned -= len;
 		btrfs_space_info_update_bytes_pinned(fs_info, space_info, -len);
+
+		if (test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+			     &cache->runtime_flags)) {
+			ASSERT(!cache->ro);
+			space_info->active_bytes_zone_unusable += len;
+			space_info->active_bytes_pinned -= len;
+		}
+
 		space_info->max_extent_size = 0;
 		if (cache->ro) {
 			space_info->bytes_readonly += len;

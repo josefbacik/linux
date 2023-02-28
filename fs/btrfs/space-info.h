@@ -96,10 +96,24 @@ struct btrfs_space_info {
 	u64 bytes_may_use;	/* number of bytes that may be used for
 				   delalloc/allocations */
 	u64 bytes_readonly;	/* total bytes that are read only */
-	/* Total bytes in the space, but only accounts active block groups. */
-	u64 active_total_bytes;
+
 	u64 bytes_zone_unusable;	/* total bytes that are unusable until
 					   resetting the device zone */
+
+	/*
+	 * This are mirrors of the above countesr.
+	 *
+	 * We need to mirror a lot of the counters for ENOSPC reasons if we're
+	 * doing active block group management.  The only exceptions are
+	 * bytes_reserved, which would be correct as we can only be allocating
+	 * from active block groups, and bytes_may_use which again is uptodate
+	 * based on what is currently being reserved.  Everything else has to be
+	 * mirrored and only accounted for in the active block groups.
+	 * */
+	u64 active_total_bytes;
+	u64 active_bytes_used;
+	u64 active_bytes_pinned;
+	u64 active_bytes_zone_unusable;
 
 	u64 max_extent_size;	/* This will hold the maximum extent size of
 				   the space info if we had an ENOSPC in the
@@ -237,5 +251,7 @@ int btrfs_reserve_data_bytes(struct btrfs_fs_info *fs_info, u64 bytes,
 void btrfs_dump_space_info_for_trans_abort(struct btrfs_fs_info *fs_info);
 void btrfs_init_async_reclaim_work(struct btrfs_fs_info *fs_info);
 u64 btrfs_account_ro_block_groups_free_space(struct btrfs_space_info *sinfo);
+void btrfs_deactivate_block_group(struct btrfs_block_group *block_group);
+void btrfs_activate_block_group(struct btrfs_block_group *block_group);
 
 #endif /* BTRFS_SPACE_INFO_H */

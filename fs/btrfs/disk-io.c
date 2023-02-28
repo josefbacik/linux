@@ -4883,6 +4883,12 @@ static int btrfs_destroy_delayed_refs(struct btrfs_transaction *trans,
 				cache->space_info, head->num_bytes);
 			cache->reserved -= head->num_bytes;
 			cache->space_info->bytes_reserved -= head->num_bytes;
+
+			if (test_bit(BLOCK_GROUP_FLAG_ZONE_IS_ACTIVE,
+				     &cache->runtime_flags))
+				cache->space_info->active_bytes_pinned +=
+					head->num_bytes;
+
 			spin_unlock(&cache->lock);
 			spin_unlock(&cache->space_info->lock);
 
