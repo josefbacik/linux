@@ -1674,7 +1674,7 @@ static int check_leaf_item(struct extent_buffer *leaf,
 	return ret;
 }
 
-static int check_leaf(struct extent_buffer *leaf, bool check_item_data)
+int btrfs_check_leaf(struct extent_buffer *leaf)
 {
 	struct btrfs_fs_info *fs_info = leaf->fs_info;
 	/* No valid key type is 0, so all key should be larger than this key */
@@ -1682,6 +1682,7 @@ static int check_leaf(struct extent_buffer *leaf, bool check_item_data)
 	struct btrfs_key key;
 	u32 nritems = btrfs_header_nritems(leaf);
 	int slot;
+	bool check_item_data = btrfs_header_flag(leaf, BTRFS_HEADER_FLAG_WRITTEN);
 
 	if (unlikely(btrfs_header_level(leaf) != 0)) {
 		generic_err(leaf, 0,
@@ -1807,6 +1808,10 @@ static int check_leaf(struct extent_buffer *leaf, bool check_item_data)
 			return -EUCLEAN;
 		}
 
+		/*
+		 * We only want to do this if WRITTEN is set, otherwise the leaf
+		 * may be in some intermediate state and won't appear valid.
+		 */
 		if (check_item_data) {
 			/*
 			 * Check if the item size and content meet other
@@ -1824,17 +1829,7 @@ static int check_leaf(struct extent_buffer *leaf, bool check_item_data)
 
 	return 0;
 }
-
-int btrfs_check_leaf_full(struct extent_buffer *leaf)
-{
-	return check_leaf(leaf, true);
-}
-ALLOW_ERROR_INJECTION(btrfs_check_leaf_full, ERRNO);
-
-int btrfs_check_leaf_relaxed(struct extent_buffer *leaf)
-{
-	return check_leaf(leaf, false);
-}
+ALLOW_ERROR_INJECTION(btrfs_check_leaf, ERRNO);
 
 int btrfs_check_node(struct extent_buffer *node)
 {
