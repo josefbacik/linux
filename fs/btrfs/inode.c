@@ -1753,7 +1753,7 @@ static int cow_file_range_async(struct btrfs_inode *inode,
 	memalloc_nofs_restore(nofs_flag);
 
 	if (!ctx) {
-		unsigned clear_bits = EXTENT_LOCKED | EXTENT_DELALLOC |
+		unsigned int clear_bits = EXTENT_DELALLOC |
 			EXTENT_DELALLOC_NEW | EXTENT_DEFRAG |
 			EXTENT_DO_ACCOUNTING;
 		unsigned long page_ops = PAGE_UNLOCK | PAGE_START_WRITEBACK |
