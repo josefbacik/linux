@@ -468,9 +468,8 @@ out_failed:
 	return found;
 }
 
-void extent_clear_unlock_delalloc(struct btrfs_inode *inode, u64 start, u64 end,
-				  struct page *locked_page,
-				  unsigned long page_ops)
+void extent_range_process(struct btrfs_inode *inode, u64 start, u64 end,
+			  struct page *locked_page, unsigned long page_ops)
 {
 	__process_pages_contig(inode->vfs_inode.i_mapping, locked_page,
 			       start, end, page_ops, NULL);

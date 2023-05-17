@@ -1010,8 +1010,7 @@ cont:
 			 */
 			clear_extent_bit(&inode->io_tree, start, end,
 					 clear_flags, NULL);
-			extent_clear_unlock_delalloc(inode, start, end, NULL,
-						     page_ops);
+			extent_range_process(inode, start, end, NULL, page_ops);
 
 			/*
 			 * Ensure we only free the compressed pages if we have
@@ -1252,8 +1251,8 @@ static int submit_one_async_extent(struct btrfs_inode *inode,
 	/* Clear dirty, set writeback and unlock the pages. */
 	clear_extent_bit(&inode->io_tree, start, end, EXTENT_LOCKED |
 			 EXTENT_DELALLOC, NULL);
-	extent_clear_unlock_delalloc(inode, start, end, NULL, PAGE_UNLOCK |
-				     PAGE_START_WRITEBACK);
+	extent_range_process(inode, start, end, NULL, PAGE_UNLOCK |
+			     PAGE_START_WRITEBACK);
 
 	btrfs_submit_compressed_write(inode, start,	/* file_offset */
 			    async_extent->ram_size,	/* num_bytes */
@@ -1276,9 +1275,9 @@ out_free:
 	clear_extent_bit(&inode->io_tree, start, end, EXTENT_LOCKED |
 			 EXTENT_DELALLOC | EXTENT_DELALLOC_NEW | EXTENT_DEFRAG |
 			 EXTENT_DO_ACCOUNTING, NULL);
-	extent_clear_unlock_delalloc(inode, start, end, NULL, PAGE_UNLOCK |
-				     PAGE_START_WRITEBACK | PAGE_END_WRITEBACK |
-				     PAGE_SET_ERROR);
+	extent_range_process(inode, start, end, NULL, PAGE_UNLOCK |
+			     PAGE_START_WRITEBACK | PAGE_END_WRITEBACK |
+			     PAGE_SET_ERROR);
 	free_async_extent_pages(async_extent);
 	goto done;
 }
@@ -1443,9 +1442,9 @@ static noinline int cow_file_range(struct btrfs_inode *inode,
 					 EXTENT_LOCKED | EXTENT_DELALLOC |
 					 EXTENT_DELALLOC_NEW | EXTENT_DEFRAG |
 					 EXTENT_DO_ACCOUNTING, NULL);
-			extent_clear_unlock_delalloc(inode, start, end,
-				     locked_page, PAGE_UNLOCK |
-				     PAGE_START_WRITEBACK | PAGE_END_WRITEBACK);
+			extent_range_process(inode, start, end, locked_page,
+					     PAGE_UNLOCK | PAGE_START_WRITEBACK |
+					     PAGE_END_WRITEBACK);
 			*nr_written = *nr_written +
 			     (end - start + PAGE_SIZE) / PAGE_SIZE;
 			*page_started = 1;
@@ -1552,8 +1551,8 @@ static noinline int cow_file_range(struct btrfs_inode *inode,
 
 		clear_extent_bit(&inode->io_tree, start, start + ram_size - 1,
 				 EXTENT_LOCKED | EXTENT_DELALLOC, NULL);
-		extent_clear_unlock_delalloc(inode, start, start + ram_size - 1,
-					     locked_page, page_ops);
+		extent_range_process(inode, start, start + ram_size - 1,
+				     locked_page, page_ops);
 		if (num_bytes < cur_alloc_size)
 			num_bytes = 0;
 		else
@@ -1622,8 +1621,8 @@ out_unlock:
 	if (!unlock && orig_start < start) {
 		if (!locked_page)
 			mapping_set_error(inode->vfs_inode.i_mapping, ret);
-		extent_clear_unlock_delalloc(inode, orig_start, start - 1,
-					     locked_page, page_ops);
+		extent_range_process(inode, orig_start, start - 1, locked_page,
+				     page_ops);
 	}
 
 	/*
@@ -1639,9 +1638,8 @@ out_unlock:
 	if (extent_reserved) {
 		clear_extent_bit(&inode->io_tree, start,
 				 start + cur_alloc_size - 1, clear_bits, NULL);
-		extent_clear_unlock_delalloc(inode, start,
-					     start + cur_alloc_size - 1,
-					     locked_page, page_ops);
+		extent_range_process(inode, start, start + cur_alloc_size - 1,
+				     locked_page, page_ops);
 		start += cur_alloc_size;
 		if (start >= end)
 			return ret;
@@ -1655,7 +1653,7 @@ out_unlock:
 	 */
 	clear_bits |= EXTENT_CLEAR_DATA_RESV;
 	clear_extent_bit(&inode->io_tree, start, end, clear_bits, NULL);
-	extent_clear_unlock_delalloc(inode, start, end, locked_page, page_ops);
+	extent_range_process(inode, start, end, locked_page, page_ops);
 	return ret;
 }
 
@@ -1760,8 +1758,7 @@ static int cow_file_range_async(struct btrfs_inode *inode,
 					 PAGE_END_WRITEBACK | PAGE_SET_ERROR;
 
 		clear_extent_bit(&inode->io_tree, start, end, clear_bits, NULL);
-		extent_clear_unlock_delalloc(inode, start, end, locked_page,
-					     page_ops);
+		extent_range_process(inode, start, end, locked_page, page_ops);
 		return -ENOMEM;
 	}
 
@@ -2137,9 +2134,9 @@ static noinline int run_delalloc_nocow(struct btrfs_inode *inode,
 		clear_extent_bit(&inode->io_tree, start, end,
 				 EXTENT_LOCKED | EXTENT_DELALLOC |
 				 EXTENT_DO_ACCOUNTING | EXTENT_DEFRAG, NULL);
-		extent_clear_unlock_delalloc(inode, start, end, locked_page,
-					     PAGE_UNLOCK | PAGE_START_WRITEBACK |
-					     PAGE_END_WRITEBACK);
+		extent_range_process(inode, start, end, locked_page,
+				     PAGE_UNLOCK | PAGE_START_WRITEBACK |
+				     PAGE_END_WRITEBACK);
 		return -ENOMEM;
 	}
 
@@ -2351,9 +2348,8 @@ out_check:
 		clear_extent_bit(&inode->io_tree, cur_offset, nocow_end,
 				 EXTENT_LOCKED | EXTENT_DELALLOC |
 				 EXTENT_CLEAR_DATA_RESV, NULL);
-		extent_clear_unlock_delalloc(inode, cur_offset, nocow_end,
-					     locked_page, PAGE_UNLOCK |
-					     PAGE_SET_ORDERED);
+		extent_range_process(inode, cur_offset, nocow_end, locked_page,
+				     PAGE_UNLOCK | PAGE_SET_ORDERED);
 
 		cur_offset = extent_end;
 
@@ -2388,10 +2384,9 @@ error:
 		clear_extent_bit(&inode->io_tree, cur_offset, end,
 				 EXTENT_LOCKED | EXTENT_DELALLOC |
 				 EXTENT_DEFRAG | EXTENT_DO_ACCOUNTING, NULL);
-		extent_clear_unlock_delalloc(inode, cur_offset, end,
-					     locked_page, PAGE_UNLOCK |
-					     PAGE_START_WRITEBACK |
-					     PAGE_END_WRITEBACK);
+		extent_range_process(inode, cur_offset, end, locked_page,
+				     PAGE_UNLOCK | PAGE_START_WRITEBACK |
+				     PAGE_END_WRITEBACK);
 	}
 	btrfs_free_path(path);
 	return ret;

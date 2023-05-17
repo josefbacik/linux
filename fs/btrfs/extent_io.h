@@ -266,9 +266,8 @@ void set_extent_buffer_uptodate(struct extent_buffer *eb);
 void clear_extent_buffer_uptodate(struct extent_buffer *eb);
 void extent_range_clear_dirty_for_io(struct inode *inode, u64 start, u64 end);
 void extent_range_redirty_for_io(struct inode *inode, u64 start, u64 end);
-void extent_clear_unlock_delalloc(struct btrfs_inode *inode, u64 start, u64 end,
-				  struct page *locked_page,
-				  unsigned long page_ops);
+void extent_range_process(struct btrfs_inode *inode, u64 start, u64 end,
+			  struct page *locked_page, unsigned long page_ops);
 int extent_invalidate_folio(struct extent_io_tree *tree,
 			    struct folio *folio, size_t offset);
 void btrfs_clear_buffer_dirty(struct btrfs_trans_handle *trans,
