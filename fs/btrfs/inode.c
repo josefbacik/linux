@@ -992,9 +992,11 @@ cont:
 			unsigned long clear_flags = EXTENT_DELALLOC |
 				EXTENT_DELALLOC_NEW | EXTENT_DEFRAG |
 				EXTENT_DO_ACCOUNTING;
-			unsigned long page_error_op;
+			unsigned long page_ops = PAGE_UNLOCK |
+				PAGE_START_WRITEBACK | PAGE_END_WRITEBACK;
 
-			page_error_op = ret < 0 ? PAGE_SET_ERROR : 0;
+			if (ret < 0)
+				page_ops |= PAGE_SET_ERROR;
 
 			/*
 			 * inline extent creation worked or returned error,
@@ -1008,12 +1010,8 @@ cont:
 			 */
 			clear_extent_bit(&inode->io_tree, start, end,
 					 clear_flags, NULL);
-			extent_clear_unlock_delalloc(inode, start, end,
-						     NULL,
-						     PAGE_UNLOCK |
-						     PAGE_START_WRITEBACK |
-						     page_error_op |
-						     PAGE_END_WRITEBACK);
+			extent_clear_unlock_delalloc(inode, start, end, NULL,
+						     page_ops);
 
 			/*
 			 * Ensure we only free the compressed pages if we have
