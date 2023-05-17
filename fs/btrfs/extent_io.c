@@ -206,9 +206,7 @@ void extent_range_redirty_for_io(struct inode *inode, u64 start, u64 end)
 /*
  * Process one page for __process_pages_contig().
  *
- * Return >0 if we hit @page == @locked_page.
- * Return 0 if we updated the page status.
- * Return -EGAIN if the we need to try again.
+ * Return -EAGAIN if the we need to try again.
  * (For PAGE_LOCK case but got dirty page or page not belong to mapping)
  */
 static int process_one_page(struct btrfs_fs_info *fs_info,
@@ -233,7 +231,7 @@ static int process_one_page(struct btrfs_fs_info *fs_info,
 		btrfs_page_clamp_clear_writeback(fs_info, page, start, len);
 
 	if (page == locked_page)
-		return 1;
+		return 0;
 
 	if (page_ops & PAGE_LOCK) {
 		int ret;
@@ -291,13 +289,12 @@ static int __process_pages_contig(struct address_space *mapping,
 		}
 
 		for (i = 0; i < found_folios; i++) {
-			int process_ret;
 			struct folio *folio = fbatch.folios[i];
-			process_ret = process_one_page(fs_info, mapping,
-					&folio->page, locked_page, page_ops,
-					start, end);
-			if (process_ret < 0) {
-				err = -EAGAIN;
+
+			err = process_one_page(fs_info, mapping, &folio->page,
+					       locked_page, page_ops, start,
+					       end);
+			if (err) {
 				folio_batch_release(&fbatch);
 				goto out;
 			}
