@@ -470,10 +470,8 @@ out_failed:
 
 void extent_clear_unlock_delalloc(struct btrfs_inode *inode, u64 start, u64 end,
 				  struct page *locked_page,
-				  u32 clear_bits, unsigned long page_ops)
+				  unsigned long page_ops)
 {
-	clear_extent_bit(&inode->io_tree, start, end, clear_bits, NULL);
-
 	__process_pages_contig(inode->vfs_inode.i_mapping, locked_page,
 			       start, end, page_ops, NULL);
 }
