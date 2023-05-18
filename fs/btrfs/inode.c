@@ -1724,6 +1724,65 @@ static noinline void async_cow_free(struct btrfs_work *work)
 		kvfree(async_cow);
 }
 
+static int run_async_work_inline(struct btrfs_inode *inode,
+				 struct page *locked_page, u64 start, u64 end,
+				 const blk_opf_t write_flags,
+				 int *page_started, unsigned long *nr_written,
+				 struct extent_state **cached_state)
+{
+	struct btrfs_fs_info *fs_info = inode->root->fs_info;
+	struct async_chunk async_chunk = {};
+	int compressed_extents;
+	u64 alloc_hint = 0;
+
+	async_chunk.async_cow = NULL;
+	async_chunk.inode = inode;
+	async_chunk.start = start;
+	async_chunk.end = end;
+	async_chunk.write_flags = write_flags;
+	async_chunk.locked_page = locked_page;
+	INIT_LIST_HEAD(&async_chunk.extents);
+
+	compressed_extents = compress_file_range(&async_chunk);
+	if (!compressed_extents) {
+		/*
+		 * We compressed and made it inline, we're done and can just
+		 * return.
+		 */
+		unlock_extent(&inode->io_tree, start, end, cached_state);
+		goto out;
+	}
+
+	while (!list_empty(&async_chunk.extents)) {
+		struct async_extent *async_extent;
+		u64 start;
+		u64 ram_size;
+		int ret;
+
+		async_extent = list_first_entry(&async_chunk.extents,
+						struct async_extent, list);
+		list_del(&async_extent->list);
+		start = async_extent->start;
+		ram_size = async_extent->ram_size;
+
+		ret = submit_one_async_extent(inode, &async_chunk, async_extent,
+					      &alloc_hint, cached_state);
+		if (ret)
+			btrfs_debug(fs_info,
+"async extent submission failed root=%lld inode=%llu start=%llu len=%llu ret=%d",
+				    inode->root->root_key.objectid,
+				    btrfs_ino(inode), start, ram_size, ret);
+	}
+out:
+	/*
+	 * We purposely don't return errors here because the async path expects
+	 * that they have to clean up the errors themselves, so there's no
+	 * reason to bother here.
+	 */
+	*page_started = 1;
+	return 0;
+}
+
 static int cow_file_range_async(struct btrfs_inode *inode,
 				struct writeback_control *wbc,
 				struct page *locked_page,
@@ -1741,6 +1800,11 @@ static int cow_file_range_async(struct btrfs_inode *inode,
 	int i;
 	unsigned nofs_flag;
 	const blk_opf_t write_flags = wbc_to_write_flags(wbc);
+
+	if (num_chunks == 1)
+		return run_async_work_inline(inode, locked_page, start,
+					     end, write_flags, page_started,
+					     nr_written, cached_state);
 
 	unlock_extent(&inode->io_tree, start, end, cached_state);
 
