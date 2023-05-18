@@ -1308,10 +1308,12 @@ static noinline void submit_compressed_extents(struct async_chunk *async_chunk)
 
 		ret = submit_one_async_extent(inode, async_chunk, async_extent,
 					      &alloc_hint);
-		btrfs_debug(fs_info,
+		if (ret)
+			btrfs_debug(fs_info,
 "async extent submission failed root=%lld inode=%llu start=%llu len=%llu ret=%d",
-			    inode->root->root_key.objectid,
-			    btrfs_ino(inode), extent_start, ram_size, ret);
+				    inode->root->root_key.objectid,
+				    btrfs_ino(inode), extent_start, ram_size,
+				    ret);
 	}
 }
 
