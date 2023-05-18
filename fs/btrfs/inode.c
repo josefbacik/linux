@@ -752,12 +752,9 @@ static inline int inode_need_compress(struct btrfs_inode *inode, u64 start,
 {
 	struct btrfs_fs_info *fs_info = inode->root->fs_info;
 
-	if (!btrfs_inode_can_compress(inode)) {
-		WARN(IS_ENABLED(CONFIG_BTRFS_DEBUG),
-			KERN_ERR "BTRFS: unexpected compression for ino %llu\n",
-			btrfs_ino(inode));
+	if (!btrfs_inode_can_compress(inode))
 		return 0;
-	}
+
 	/*
 	 * Special check for subpage.
 	 *
@@ -2438,8 +2435,7 @@ int btrfs_run_delalloc_range(struct btrfs_inode *inode, struct page *locked_page
 					 page_started, nr_written,
 					 cached_state);
 		ASSERT(*cached_state == NULL);
-	} else if (!btrfs_inode_can_compress(inode) ||
-		   !inode_need_compress(inode, start, end)) {
+	} else if (!inode_need_compress(inode, start, end)) {
 		if (zoned)
 			ret = run_delalloc_zoned(inode, locked_page, start, end,
 						 page_started, nr_written,
