@@ -128,7 +128,8 @@ static noinline int cow_file_range(struct btrfs_inode *inode,
 				   struct page *locked_page,
 				   u64 start, u64 end, int *page_started,
 				   unsigned long *nr_written, int unlock,
-				   u64 *done_offset);
+				   u64 *done_offset,
+				   struct extent_state **cached_state);
 static struct extent_map *create_io_em(struct btrfs_inode *inode, u64 start,
 				       u64 len, u64 orig_start, u64 block_start,
 				       u64 block_len, u64 orig_block_len,
@@ -1140,7 +1141,7 @@ static int submit_uncompressed_range(struct btrfs_inode *inode,
 	 * can directly submit them without interruption.
 	 */
 	ret = cow_file_range(inode, locked_page, start, end, &page_started,
-			     &nr_written, 0, NULL);
+			     &nr_written, 0, NULL, NULL);
 	/* Inline extent inserted, page gets unlocked and everything is done */
 	if (page_started)
 		return 0;
@@ -1385,7 +1386,8 @@ static noinline int cow_file_range(struct btrfs_inode *inode,
 				   struct page *locked_page,
 				   u64 start, u64 end, int *page_started,
 				   unsigned long *nr_written, int unlock,
-				   u64 *done_offset)
+				   u64 *done_offset,
+				   struct extent_state **cached_state)
 {
 	struct btrfs_root *root = inode->root;
 	struct btrfs_fs_info *fs_info = root->fs_info;
@@ -1441,7 +1443,7 @@ static noinline int cow_file_range(struct btrfs_inode *inode,
 			clear_extent_bit(&inode->io_tree, start, end,
 					 EXTENT_LOCKED | EXTENT_DELALLOC |
 					 EXTENT_DELALLOC_NEW | EXTENT_DEFRAG |
-					 EXTENT_DO_ACCOUNTING, NULL);
+					 EXTENT_DO_ACCOUNTING, cached_state);
 			extent_range_process(inode, start, end, locked_page,
 					     PAGE_UNLOCK | PAGE_START_WRITEBACK |
 					     PAGE_END_WRITEBACK);
@@ -1550,7 +1552,7 @@ static noinline int cow_file_range(struct btrfs_inode *inode,
 		page_ops |= PAGE_SET_ORDERED;
 
 		clear_extent_bit(&inode->io_tree, start, start + ram_size - 1,
-				 EXTENT_LOCKED | EXTENT_DELALLOC, NULL);
+				 EXTENT_LOCKED | EXTENT_DELALLOC, cached_state);
 		extent_range_process(inode, start, start + ram_size - 1,
 				     locked_page, page_ops);
 		if (num_bytes < cur_alloc_size)
@@ -1637,7 +1639,8 @@ out_unlock:
 	 */
 	if (extent_reserved) {
 		clear_extent_bit(&inode->io_tree, start,
-				 start + cur_alloc_size - 1, clear_bits, NULL);
+				 start + cur_alloc_size - 1, clear_bits,
+				 cached_state);
 		extent_range_process(inode, start, start + cur_alloc_size - 1,
 				     locked_page, page_ops);
 		start += cur_alloc_size;
@@ -1652,7 +1655,8 @@ out_unlock:
 	 * btrfs_check_data_free_space().
 	 */
 	clear_bits |= EXTENT_CLEAR_DATA_RESV;
-	clear_extent_bit(&inode->io_tree, start, end, clear_bits, NULL);
+	clear_extent_bit(&inode->io_tree, start, end, clear_bits,
+			 cached_state);
 	extent_range_process(inode, start, end, locked_page, page_ops);
 	return ret;
 }
@@ -1722,7 +1726,8 @@ static int cow_file_range_async(struct btrfs_inode *inode,
 				struct writeback_control *wbc,
 				struct page *locked_page,
 				u64 start, u64 end, int *page_started,
-				unsigned long *nr_written)
+				unsigned long *nr_written,
+				struct extent_state **cached_state)
 {
 	struct btrfs_fs_info *fs_info = inode->root->fs_info;
 	struct cgroup_subsys_state *blkcg_css = wbc_blkcg_css(wbc);
@@ -1736,7 +1741,7 @@ static int cow_file_range_async(struct btrfs_inode *inode,
 	unsigned nofs_flag;
 	const blk_opf_t write_flags = wbc_to_write_flags(wbc);
 
-	unlock_extent(&inode->io_tree, start, end, NULL);
+	unlock_extent(&inode->io_tree, start, end, cached_state);
 
 	if (inode->flags & BTRFS_INODE_NOCOMPRESS &&
 	    !btrfs_test_opt(fs_info, FORCE_COMPRESS)) {
@@ -1836,7 +1841,8 @@ static int cow_file_range_async(struct btrfs_inode *inode,
 static noinline int run_delalloc_zoned(struct btrfs_inode *inode,
 				       struct page *locked_page, u64 start,
 				       u64 end, int *page_started,
-				       unsigned long *nr_written)
+				       unsigned long *nr_written,
+				       struct extent_state **cached_state)
 {
 	u64 done_offset = end;
 	int ret;
@@ -1844,7 +1850,7 @@ static noinline int run_delalloc_zoned(struct btrfs_inode *inode,
 
 	while (start <= end) {
 		ret = cow_file_range(inode, locked_page, start, end, page_started,
-				     nr_written, 0, &done_offset);
+				     nr_written, 0, &done_offset, cached_state);
 		if (ret && ret != -EAGAIN)
 			return ret;
 
@@ -1903,7 +1909,8 @@ static noinline int csum_exist_in_range(struct btrfs_fs_info *fs_info,
 
 static int fallback_to_cow(struct btrfs_inode *inode, struct page *locked_page,
 			   const u64 start, const u64 end,
-			   int *page_started, unsigned long *nr_written)
+			   int *page_started, unsigned long *nr_written,
+			   struct extent_state **cached_state)
 {
 	const bool is_space_ino = btrfs_is_free_space_inode(inode);
 	const bool is_reloc_ino = btrfs_is_data_reloc_root(inode->root);
@@ -1964,7 +1971,7 @@ static int fallback_to_cow(struct btrfs_inode *inode, struct page *locked_page,
 	}
 
 	return cow_file_range(inode, locked_page, start, end, page_started,
-			      nr_written, 1, NULL);
+			      nr_written, 1, NULL, cached_state);
 }
 
 struct can_nocow_file_extent_args {
@@ -2115,7 +2122,8 @@ static noinline int run_delalloc_nocow(struct btrfs_inode *inode,
 				       struct page *locked_page,
 				       const u64 start, const u64 end,
 				       int *page_started,
-				       unsigned long *nr_written)
+				       unsigned long *nr_written,
+				       struct extent_state **cached_state)
 {
 	struct btrfs_fs_info *fs_info = inode->root->fs_info;
 	struct btrfs_root *root = inode->root;
@@ -2133,7 +2141,8 @@ static noinline int run_delalloc_nocow(struct btrfs_inode *inode,
 	if (!path) {
 		clear_extent_bit(&inode->io_tree, start, end,
 				 EXTENT_LOCKED | EXTENT_DELALLOC |
-				 EXTENT_DO_ACCOUNTING | EXTENT_DEFRAG, NULL);
+				 EXTENT_DO_ACCOUNTING | EXTENT_DEFRAG,
+				 cached_state);
 		extent_range_process(inode, start, end, locked_page,
 				     PAGE_UNLOCK | PAGE_START_WRITEBACK |
 				     PAGE_END_WRITEBACK);
@@ -2282,7 +2291,8 @@ out_check:
 		if (cow_start != (u64)-1) {
 			ret = fallback_to_cow(inode, locked_page,
 					      cow_start, found_key.offset - 1,
-					      page_started, nr_written);
+					      page_started, nr_written,
+					      cached_state);
 			if (ret)
 				goto error;
 			cow_start = (u64)-1;
@@ -2347,7 +2357,7 @@ out_check:
 
 		clear_extent_bit(&inode->io_tree, cur_offset, nocow_end,
 				 EXTENT_LOCKED | EXTENT_DELALLOC |
-				 EXTENT_CLEAR_DATA_RESV, NULL);
+				 EXTENT_CLEAR_DATA_RESV, cached_state);
 		extent_range_process(inode, cur_offset, nocow_end, locked_page,
 				     PAGE_UNLOCK | PAGE_SET_ORDERED);
 
@@ -2371,7 +2381,7 @@ out_check:
 	if (cow_start != (u64)-1) {
 		cur_offset = end;
 		ret = fallback_to_cow(inode, locked_page, cow_start, end,
-				      page_started, nr_written);
+				      page_started, nr_written, cached_state);
 		if (ret)
 			goto error;
 	}
@@ -2383,7 +2393,8 @@ error:
 	if (ret && cur_offset < end) {
 		clear_extent_bit(&inode->io_tree, cur_offset, end,
 				 EXTENT_LOCKED | EXTENT_DELALLOC |
-				 EXTENT_DEFRAG | EXTENT_DO_ACCOUNTING, NULL);
+				 EXTENT_DEFRAG | EXTENT_DO_ACCOUNTING,
+				 cached_state);
 		extent_range_process(inode, cur_offset, end, locked_page,
 				     PAGE_UNLOCK | PAGE_START_WRITEBACK |
 				     PAGE_END_WRITEBACK);
@@ -2410,7 +2421,8 @@ static bool should_nocow(struct btrfs_inode *inode, u64 start, u64 end)
  */
 int btrfs_run_delalloc_range(struct btrfs_inode *inode, struct page *locked_page,
 		u64 start, u64 end, int *page_started, unsigned long *nr_written,
-		struct writeback_control *wbc)
+		struct writeback_control *wbc,
+		struct extent_state **cached_state)
 {
 	int ret;
 	const bool zoned = btrfs_is_zoned(inode->root->fs_info);
@@ -2432,19 +2444,26 @@ int btrfs_run_delalloc_range(struct btrfs_inode *inode, struct page *locked_page
 		 */
 		ASSERT(!zoned || btrfs_is_data_reloc_root(inode->root));
 		ret = run_delalloc_nocow(inode, locked_page, start, end,
-					 page_started, nr_written);
+					 page_started, nr_written,
+					 cached_state);
+		ASSERT(*cached_state == NULL);
 	} else if (!btrfs_inode_can_compress(inode) ||
 		   !inode_need_compress(inode, start, end)) {
 		if (zoned)
 			ret = run_delalloc_zoned(inode, locked_page, start, end,
-						 page_started, nr_written);
+						 page_started, nr_written,
+						 cached_state);
 		else
 			ret = cow_file_range(inode, locked_page, start, end,
-					     page_started, nr_written, 1, NULL);
+					     page_started, nr_written, 1, NULL,
+					     cached_state);
+		ASSERT(*cached_state == NULL);
 	} else {
 		set_bit(BTRFS_INODE_HAS_ASYNC_EXTENT, &inode->runtime_flags);
 		ret = cow_file_range_async(inode, wbc, locked_page, start, end,
-					   page_started, nr_written);
+					   page_started, nr_written,
+					   cached_state);
+		ASSERT(*cached_state == NULL);
 	}
 	ASSERT(ret <= 0);
 	if (ret)

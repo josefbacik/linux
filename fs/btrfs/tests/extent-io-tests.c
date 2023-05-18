@@ -111,6 +111,7 @@ static int test_find_delalloc(u32 sectorsize)
 	struct extent_io_tree *tmp;
 	struct page *page;
 	struct page *locked_page = NULL;
+	struct extent_state *cached_state = NULL;
 	unsigned long index = 0;
 	/* In this test we need at least 2 file extents at its maximum size */
 	u64 max_bytes = BTRFS_MAX_EXTENT_SIZE;
@@ -163,7 +164,7 @@ static int test_find_delalloc(u32 sectorsize)
 	start = 0;
 	end = start + PAGE_SIZE - 1;
 	found = find_lock_delalloc_range(inode, locked_page, &start,
-					 &end);
+					 &end, &cached_state);
 	if (!found) {
 		test_err("should have found at least one delalloc");
 		goto out_bits;
@@ -173,7 +174,7 @@ static int test_find_delalloc(u32 sectorsize)
 			sectorsize - 1, start, end);
 		goto out_bits;
 	}
-	unlock_extent(tmp, start, end, NULL);
+	unlock_extent(tmp, start, end, &cached_state);
 	unlock_page(locked_page);
 	put_page(locked_page);
 
@@ -194,7 +195,7 @@ static int test_find_delalloc(u32 sectorsize)
 	start = test_start;
 	end = start + PAGE_SIZE - 1;
 	found = find_lock_delalloc_range(inode, locked_page, &start,
-					 &end);
+					 &end, &cached_state);
 	if (!found) {
 		test_err("couldn't find delalloc in our range");
 		goto out_bits;
@@ -209,7 +210,7 @@ static int test_find_delalloc(u32 sectorsize)
 		test_err("there were unlocked pages in the range");
 		goto out_bits;
 	}
-	unlock_extent(tmp, start, end, NULL);
+	unlock_extent(tmp, start, end, &cached_state);
 	/* locked_page was unlocked above */
 	put_page(locked_page);
 
@@ -228,7 +229,7 @@ static int test_find_delalloc(u32 sectorsize)
 	start = test_start;
 	end = start + PAGE_SIZE - 1;
 	found = find_lock_delalloc_range(inode, locked_page, &start,
-					 &end);
+					 &end, &cached_state);
 	if (found) {
 		test_err("found range when we shouldn't have");
 		goto out_bits;
@@ -249,7 +250,7 @@ static int test_find_delalloc(u32 sectorsize)
 	start = test_start;
 	end = start + PAGE_SIZE - 1;
 	found = find_lock_delalloc_range(inode, locked_page, &start,
-					 &end);
+					 &end, &cached_state);
 	if (!found) {
 		test_err("didn't find our range");
 		goto out_bits;
@@ -264,7 +265,7 @@ static int test_find_delalloc(u32 sectorsize)
 		test_err("pages in range were not all locked");
 		goto out_bits;
 	}
-	unlock_extent(tmp, start, end, NULL);
+	unlock_extent(tmp, start, end, &cached_state);
 
 	/*
 	 * Now to test where we run into a page that is no longer dirty in the
@@ -290,7 +291,7 @@ static int test_find_delalloc(u32 sectorsize)
 	 * tests expected behavior.
 	 */
 	found = find_lock_delalloc_range(inode, locked_page, &start,
-					 &end);
+					 &end, &cached_state);
 	if (!found) {
 		test_err("didn't find our range");
 		goto out_bits;
@@ -309,7 +310,7 @@ static int test_find_delalloc(u32 sectorsize)
 out_bits:
 	if (ret)
 		dump_extent_io_tree(tmp);
-	clear_extent_bits(tmp, 0, total_dirty - 1, (unsigned)-1);
+	clear_extent_bit(tmp, 0, total_dirty - 1, (unsigned)-1, &cached_state);
 out:
 	if (locked_page)
 		put_page(locked_page);

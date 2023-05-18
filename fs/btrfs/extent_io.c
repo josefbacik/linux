@@ -377,7 +377,7 @@ static noinline int lock_delalloc_pages(struct inode *inode,
 EXPORT_FOR_TESTS
 noinline_for_stack bool find_lock_delalloc_range(struct inode *inode,
 				    struct page *locked_page, u64 *start,
-				    u64 *end)
+				    u64 *end, struct extent_state **cached_state)
 {
 	struct btrfs_fs_info *fs_info = btrfs_sb(inode->i_sb);
 	struct extent_io_tree *tree = &BTRFS_I(inode)->io_tree;
@@ -388,7 +388,6 @@ noinline_for_stack bool find_lock_delalloc_range(struct inode *inode,
 	u64 delalloc_start;
 	u64 delalloc_end;
 	bool found;
-	struct extent_state *cached_state = NULL;
 	int ret;
 	int loops = 0;
 
@@ -403,13 +402,14 @@ again:
 	delalloc_start = *start;
 	delalloc_end = 0;
 	found = btrfs_find_delalloc_range(tree, &delalloc_start, &delalloc_end,
-					  max_bytes, &cached_state);
+					  max_bytes, cached_state);
 	if (!found || delalloc_end <= *start || delalloc_start > orig_end) {
 		*start = delalloc_start;
 
 		/* @delalloc_end can be -1, never go beyond @orig_end */
 		*end = min(delalloc_end, orig_end);
-		free_extent_state(cached_state);
+		free_extent_state(*cached_state);
+		*cached_state = NULL;
 		return false;
 	}
 
@@ -435,8 +435,8 @@ again:
 		/* some of the pages are gone, lets avoid looping by
 		 * shortening the size of the delalloc range we're searching
 		 */
-		free_extent_state(cached_state);
-		cached_state = NULL;
+		free_extent_state(*cached_state);
+		*cached_state = NULL;
 		if (!loops) {
 			max_bytes = PAGE_SIZE;
 			loops = 1;
@@ -448,20 +448,19 @@ again:
 	}
 
 	/* step three, lock the state bits for the whole range */
-	lock_extent(tree, delalloc_start, delalloc_end, &cached_state);
+	lock_extent(tree, delalloc_start, delalloc_end, cached_state);
 
 	/* then test to make sure it is all still delalloc */
 	ret = test_range_bit(tree, delalloc_start, delalloc_end,
-			     EXTENT_DELALLOC, 1, cached_state);
+			     EXTENT_DELALLOC, 1, *cached_state);
 	if (!ret) {
 		unlock_extent(tree, delalloc_start, delalloc_end,
-			      &cached_state);
+			      cached_state);
 		__unlock_for_delalloc(inode, locked_page,
 			      delalloc_start, delalloc_end);
 		cond_resched();
 		goto again;
 	}
-	free_extent_state(cached_state);
 	*start = delalloc_start;
 	*end = delalloc_end;
 out_failed:
@@ -1244,18 +1243,22 @@ static noinline_for_stack int writepage_delalloc(struct btrfs_inode *inode,
 	int page_started = 0;
 
 	while (delalloc_start < page_end) {
+		struct extent_state *cached_state = NULL;
 		u64 delalloc_end = page_end;
 		bool found;
 
 		found = find_lock_delalloc_range(&inode->vfs_inode, page,
-					       &delalloc_start,
-					       &delalloc_end);
+						 &delalloc_start, &delalloc_end,
+						 &cached_state);
 		if (!found) {
+			ASSERT(cached_state == NULL);
 			delalloc_start = delalloc_end + 1;
 			continue;
 		}
 		ret = btrfs_run_delalloc_range(inode, page, delalloc_start,
-				delalloc_end, &page_started, &nr_written, wbc);
+					       delalloc_end, &page_started,
+					       &nr_written, wbc, &cached_state);
+		ASSERT(cached_state == NULL);
 		if (ret) {
 			btrfs_page_set_error(inode->root->fs_info, page,
 					     page_offset(page), PAGE_SIZE);

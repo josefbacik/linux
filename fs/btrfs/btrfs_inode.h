@@ -501,7 +501,8 @@ int btrfs_prealloc_file_range_trans(struct inode *inode,
 				    loff_t actual_len, u64 *alloc_hint);
 int btrfs_run_delalloc_range(struct btrfs_inode *inode, struct page *locked_page,
 			     u64 start, u64 end, int *page_started,
-			     unsigned long *nr_written, struct writeback_control *wbc);
+			     unsigned long *nr_written, struct writeback_control *wbc,
+			     struct extent_state **cached_state);
 int btrfs_writepage_cow_fixup(struct page *page);
 void btrfs_writepage_endio_finish_ordered(struct btrfs_inode *inode,
 					  struct page *page, u64 start,

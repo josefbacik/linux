@@ -12,6 +12,7 @@
 #include "misc.h"
 
 struct btrfs_trans_handle;
+struct extent_state;
 
 enum {
 	EXTENT_BUFFER_UPTODATE,
@@ -280,7 +281,7 @@ void end_extent_writepage(struct page *page, int err, u64 start, u64 end);
 #ifdef CONFIG_BTRFS_FS_RUN_SANITY_TESTS
 bool find_lock_delalloc_range(struct inode *inode,
 			     struct page *locked_page, u64 *start,
-			     u64 *end);
+			     u64 *end, struct extent_state **cached_state);
 #endif
 struct extent_buffer *alloc_test_extent_buffer(struct btrfs_fs_info *fs_info,
 					       u64 start);
