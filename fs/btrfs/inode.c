@@ -1167,15 +1167,14 @@ static int submit_uncompressed_range(struct btrfs_inode *inode,
 static int submit_one_async_extent(struct btrfs_inode *inode,
 				   struct async_chunk *async_chunk,
 				   struct async_extent *async_extent,
-				   u64 *alloc_hint)
+				   u64 *alloc_hint,
+				   struct extent_state **cached_state)
 {
-	struct extent_io_tree *io_tree = &inode->io_tree;
 	struct btrfs_root *root = inode->root;
 	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct btrfs_key ins;
 	struct page *locked_page = NULL;
 	struct extent_map *em;
-	struct extent_state *cached_state = NULL;
 	int ret = 0;
 	u64 start = async_extent->start;
 	u64 end = async_extent->start + async_extent->ram_size - 1;
@@ -1194,12 +1193,11 @@ static int submit_one_async_extent(struct btrfs_inode *inode,
 		if (!(start >= locked_page_end || end <= locked_page_start))
 			locked_page = async_chunk->locked_page;
 	}
-	lock_extent(io_tree, start, end, &cached_state);
 
 	/* We have fall back to uncompressed write */
 	if (!async_extent->pages) {
 		ret = submit_uncompressed_range(inode, async_extent, locked_page,
-						&cached_state);
+						cached_state);
 		goto done;
 	}
 
@@ -1251,7 +1249,7 @@ static int submit_one_async_extent(struct btrfs_inode *inode,
 
 	/* Clear dirty, set writeback and unlock the pages. */
 	clear_extent_bit(&inode->io_tree, start, end, EXTENT_LOCKED |
-			 EXTENT_DELALLOC, &cached_state);
+			 EXTENT_DELALLOC, cached_state);
 	extent_range_process(inode, start, end, NULL, PAGE_UNLOCK |
 			     PAGE_START_WRITEBACK);
 
@@ -1275,7 +1273,7 @@ out_free_reserve:
 out_free:
 	clear_extent_bit(&inode->io_tree, start, end, EXTENT_LOCKED |
 			 EXTENT_DELALLOC | EXTENT_DELALLOC_NEW | EXTENT_DEFRAG |
-			 EXTENT_DO_ACCOUNTING, &cached_state);
+			 EXTENT_DO_ACCOUNTING, cached_state);
 	extent_range_process(inode, start, end, NULL, PAGE_UNLOCK |
 			     PAGE_START_WRITEBACK | PAGE_END_WRITEBACK |
 			     PAGE_SET_ERROR);
@@ -1292,28 +1290,30 @@ static noinline void submit_compressed_extents(struct async_chunk *async_chunk)
 {
 	struct btrfs_inode *inode = async_chunk->inode;
 	struct btrfs_fs_info *fs_info = inode->root->fs_info;
+	struct extent_io_tree *io_tree = &inode->io_tree;
 	struct async_extent *async_extent;
 	u64 alloc_hint = 0;
 	int ret = 0;
 
 	while (!list_empty(&async_chunk->extents)) {
-		u64 extent_start;
+		struct extent_state *cached_state = NULL;
+		u64 start;
 		u64 ram_size;
 
 		async_extent = list_entry(async_chunk->extents.next,
 					  struct async_extent, list);
 		list_del(&async_extent->list);
-		extent_start = async_extent->start;
+		start = async_extent->start;
 		ram_size = async_extent->ram_size;
 
+		lock_extent(io_tree, start, start + ram_size - 1, &cached_state);
 		ret = submit_one_async_extent(inode, async_chunk, async_extent,
-					      &alloc_hint);
+					      &alloc_hint, &cached_state);
 		if (ret)
 			btrfs_debug(fs_info,
 "async extent submission failed root=%lld inode=%llu start=%llu len=%llu ret=%d",
 				    inode->root->root_key.objectid,
-				    btrfs_ino(inode), extent_start, ram_size,
-				    ret);
+				    btrfs_ino(inode), start, ram_size, ret);
 	}
 }
 
