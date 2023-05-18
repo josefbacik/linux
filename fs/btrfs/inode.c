@@ -1125,7 +1125,8 @@ static void free_async_extent_pages(struct async_extent *async_extent)
 
 static int submit_uncompressed_range(struct btrfs_inode *inode,
 				     struct async_extent *async_extent,
-				     struct page *locked_page)
+				     struct page *locked_page,
+				     struct extent_state **cached_state)
 {
 	u64 start = async_extent->start;
 	u64 end = async_extent->start + async_extent->ram_size - 1;
@@ -1141,7 +1142,7 @@ static int submit_uncompressed_range(struct btrfs_inode *inode,
 	 * can directly submit them without interruption.
 	 */
 	ret = cow_file_range(inode, locked_page, start, end, &page_started,
-			     &nr_written, 0, NULL, NULL);
+			     &nr_written, 0, NULL, cached_state);
 	/* Inline extent inserted, page gets unlocked and everything is done */
 	if (page_started)
 		return 0;
@@ -1177,6 +1178,7 @@ static int submit_one_async_extent(struct btrfs_inode *inode,
 	struct btrfs_key ins;
 	struct page *locked_page = NULL;
 	struct extent_map *em;
+	struct extent_state *cached_state = NULL;
 	int ret = 0;
 	u64 start = async_extent->start;
 	u64 end = async_extent->start + async_extent->ram_size - 1;
@@ -1195,11 +1197,12 @@ static int submit_one_async_extent(struct btrfs_inode *inode,
 		if (!(start >= locked_page_end || end <= locked_page_start))
 			locked_page = async_chunk->locked_page;
 	}
-	lock_extent(io_tree, start, end, NULL);
+	lock_extent(io_tree, start, end, &cached_state);
 
 	/* We have fall back to uncompressed write */
 	if (!async_extent->pages) {
-		ret = submit_uncompressed_range(inode, async_extent, locked_page);
+		ret = submit_uncompressed_range(inode, async_extent, locked_page,
+						&cached_state);
 		goto done;
 	}
 
@@ -1251,7 +1254,7 @@ static int submit_one_async_extent(struct btrfs_inode *inode,
 
 	/* Clear dirty, set writeback and unlock the pages. */
 	clear_extent_bit(&inode->io_tree, start, end, EXTENT_LOCKED |
-			 EXTENT_DELALLOC, NULL);
+			 EXTENT_DELALLOC, &cached_state);
 	extent_range_process(inode, start, end, NULL, PAGE_UNLOCK |
 			     PAGE_START_WRITEBACK);
 
@@ -1275,7 +1278,7 @@ out_free_reserve:
 out_free:
 	clear_extent_bit(&inode->io_tree, start, end, EXTENT_LOCKED |
 			 EXTENT_DELALLOC | EXTENT_DELALLOC_NEW | EXTENT_DEFRAG |
-			 EXTENT_DO_ACCOUNTING, NULL);
+			 EXTENT_DO_ACCOUNTING, &cached_state);
 	extent_range_process(inode, start, end, NULL, PAGE_UNLOCK |
 			     PAGE_START_WRITEBACK | PAGE_END_WRITEBACK |
 			     PAGE_SET_ERROR);
