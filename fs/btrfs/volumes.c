@@ -1746,7 +1746,7 @@ static int btrfs_free_dev_extent(struct btrfs_trans_handle *trans,
 	key.offset = start;
 	key.type = BTRFS_DEV_EXTENT_KEY;
 again:
-	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+	ret = btrfs_search_slot(trans, root, &key, path, -2, 1);
 	if (ret > 0) {
 		ret = btrfs_previous_item(root, path, key.objectid,
 					  BTRFS_DEV_EXTENT_KEY);
@@ -1939,7 +1939,7 @@ static int btrfs_rm_dev_item(struct btrfs_trans_handle *trans,
 	key.offset = device->devid;
 
 	btrfs_reserve_chunk_metadata(trans, false);
-	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+	ret = btrfs_search_slot(trans, root, &key, path, -2, 1);
 	btrfs_trans_release_chunk_metadata(trans);
 	if (ret) {
 		if (ret > 0)
@@ -2962,7 +2962,7 @@ static int btrfs_free_chunk(struct btrfs_trans_handle *trans, u64 chunk_offset)
 	key.offset = chunk_offset;
 	key.type = BTRFS_CHUNK_ITEM_KEY;
 
-	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+	ret = btrfs_search_slot(trans, root, &key, path, -2, 1);
 	if (ret < 0)
 		goto out;
 	else if (ret > 0) { /* Logic error or corruption */
@@ -3515,7 +3515,7 @@ static int del_balance_item(struct btrfs_fs_info *fs_info)
 	key.type = BTRFS_TEMPORARY_ITEM_KEY;
 	key.offset = 0;
 
-	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+	ret = btrfs_search_slot(trans, root, &key, path, -2, 1);
 	if (ret < 0)
 		goto out;
 	if (ret > 0) {
@@ -7487,7 +7487,7 @@ static int update_dev_stat_item(struct btrfs_trans_handle *trans,
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
-	ret = btrfs_search_slot(trans, dev_root, &key, path, -1, 1);
+	ret = btrfs_search_slot(trans, dev_root, &key, path, -2, 1);
 	if (ret < 0) {
 		btrfs_warn_in_rcu(fs_info,
 			"error %d while searching for dev_stats item for device %s",

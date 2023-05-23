@@ -43,7 +43,7 @@ int btrfs_del_orphan_item(struct btrfs_trans_handle *trans,
 	if (!path)
 		return -ENOMEM;
 
-	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+	ret = btrfs_search_slot(trans, root, &key, path, -2, 1);
 	if (ret < 0)
 		goto out;
 	if (ret) { /* JDM: Really? */

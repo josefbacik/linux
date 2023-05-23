@@ -1881,13 +1881,23 @@ static int search_leaf(struct btrfs_trans_handle *trans,
 		       const struct btrfs_key *key,
 		       struct btrfs_path *path,
 		       int ins_len,
-		       int prev_cmp)
+		       int prev_cmp,
+		       int *write_lock_level,
+		       int *lowest_unlock)
 {
+	struct btrfs_fs_info *fs_info = root->fs_info;
 	struct extent_buffer *leaf = path->nodes[0];
 	int leaf_free_space = -1;
 	int search_low_slot = 0;
 	int ret;
 	bool do_bin_search = true;
+
+	/*
+	 * Cache the leaf free space, since we will need it later and it will
+	 * not change until then.
+	 */
+	if (ins_len)
+		leaf_free_space = btrfs_leaf_free_space(leaf);
 
 	/*
 	 * If we are doing an insertion, the leaf has enough free space and the
@@ -1897,12 +1907,6 @@ static int search_leaf(struct btrfs_trans_handle *trans,
 	 * tasks to lock the parent and any other upper nodes.
 	 */
 	if (ins_len > 0) {
-		/*
-		 * Cache the leaf free space, since we will need it later and it
-		 * will not change until then.
-		 */
-		leaf_free_space = btrfs_leaf_free_space(leaf);
-
 		/*
 		 * !path->locks[1] means we have a single node tree, the leaf is
 		 * the root of the tree.
@@ -1971,6 +1975,26 @@ static int search_leaf(struct btrfs_trans_handle *trans,
 			return ret;
 	}
 
+	if (ins_len == -2 && path->nodes[1] && ret == 0) {
+		int item_size = sizeof(struct btrfs_item) +
+			btrfs_item_size(path->nodes[0], path->slots[0]);
+		int used;
+
+		used = BTRFS_LEAF_DATA_SIZE(fs_info) - leaf_free_space -
+			item_size;
+
+		/* Mirrors btrfs_del_items. */
+		if (used < BTRFS_LEAF_DATA_SIZE(fs_info) / 3) {
+			if (*write_lock_level < 1 ||
+			    *lowest_unlock < 2) {
+				*write_lock_level = 1;
+				*lowest_unlock = 2;
+				btrfs_release_path(path);
+				return -EAGAIN;
+			}
+		}
+	}
+
 	if (ins_len > 0) {
 		/*
 		 * Item key already exists. In this case, if we are allowed to
@@ -1991,6 +2015,12 @@ static int search_leaf(struct btrfs_trans_handle *trans,
 		if (leaf_free_space < ins_len) {
 			int err;
 
+			if (*write_lock_level < 1) {
+				*write_lock_level = 1;
+				btrfs_release_path(path);
+				return -EAGAIN;
+			}
+
 			err = split_leaf(trans, root, key, path, ins_len,
 					 (ret == 0));
 			ASSERT(err <= 0);
@@ -1998,6 +2028,17 @@ static int search_leaf(struct btrfs_trans_handle *trans,
 				err = -EUCLEAN;
 			if (err)
 				ret = err;
+		}
+	}
+
+	if (ret == 0 && path->slots[0] == 0 && path->nodes[1] && ins_len) {
+		if (*write_lock_level < 1 ||
+		    (ins_len < 0 && *lowest_unlock < 2)) {
+			*write_lock_level = 1;
+			if (ins_len < 0)
+				*lowest_unlock = 2;
+			btrfs_release_path(path);
+			return -EAGAIN;
 		}
 	}
 
@@ -2066,18 +2107,12 @@ int btrfs_search_slot(struct btrfs_trans_handle *trans, struct btrfs_root *root,
 	 */
 	ASSERT(!p->nowait || !cow);
 
-	if (ins_len < 0) {
+	if (ins_len == -1) {
 		lowest_unlock = 2;
 
 		/* when we are removing items, we might have to go up to level
 		 * two as we update tree pointers  Make sure we keep write
 		 * for those levels as well
-		 */
-		write_lock_level = 2;
-	} else if (ins_len > 0) {
-		/*
-		 * for inserting items, make sure we have a write lock on
-		 * level 1 so we can update keys
 		 */
 		write_lock_level = 1;
 	}
@@ -2175,10 +2210,10 @@ cow_done:
 		}
 
 		if (level == 0) {
-			if (ins_len > 0)
-				ASSERT(write_lock_level >= 1);
-
-			ret = search_leaf(trans, root, key, p, ins_len, prev_cmp);
+			ret = search_leaf(trans, root, key, p, ins_len, prev_cmp,
+					  &write_lock_level, &lowest_unlock);
+			if (ret == -EAGAIN)
+				goto again;
 			if (!p->search_for_split)
 				unlock_up(p, level, lowest_unlock,
 					  min_write_lock_level, NULL);

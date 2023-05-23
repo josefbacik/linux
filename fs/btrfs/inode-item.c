@@ -128,7 +128,7 @@ static int btrfs_del_inode_extref(struct btrfs_trans_handle *trans,
 	if (!path)
 		return -ENOMEM;
 
-	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+	ret = btrfs_search_slot(trans, root, &key, path, -2, 1);
 	if (ret > 0)
 		ret = -ENOENT;
 	if (ret < 0)
@@ -199,7 +199,7 @@ int btrfs_del_inode_ref(struct btrfs_trans_handle *trans,
 	if (!path)
 		return -ENOMEM;
 
-	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+	ret = btrfs_search_slot(trans, root, &key, path, -2, 1);
 	if (ret > 0) {
 		ret = -ENOENT;
 		search_ext_refs = 1;

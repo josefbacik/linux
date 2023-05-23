@@ -1658,7 +1658,7 @@ static noinline int fixup_inode_link_counts(struct btrfs_trans_handle *trans,
 	key.type = BTRFS_ORPHAN_ITEM_KEY;
 	key.offset = (u64)-1;
 	while (1) {
-		ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+		ret = btrfs_search_slot(trans, root, &key, path, -2, 1);
 		if (ret < 0)
 			break;
 

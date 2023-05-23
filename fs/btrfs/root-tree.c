@@ -319,7 +319,7 @@ int btrfs_del_root(struct btrfs_trans_handle *trans,
 	path = btrfs_alloc_path();
 	if (!path)
 		return -ENOMEM;
-	ret = btrfs_search_slot(trans, root, key, path, -1, 1);
+	ret = btrfs_search_slot(trans, root, key, path, -2, 1);
 	if (ret < 0)
 		goto out;
 

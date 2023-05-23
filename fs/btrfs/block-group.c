@@ -992,7 +992,7 @@ static int remove_block_group_item(struct btrfs_trans_handle *trans,
 	key.type = BTRFS_BLOCK_GROUP_ITEM_KEY;
 	key.offset = block_group->length;
 
-	ret = btrfs_search_slot(trans, root, &key, path, -1, 1);
+	ret = btrfs_search_slot(trans, root, &key, path, -2, 1);
 	if (ret > 0)
 		ret = -ENOENT;
 	if (ret < 0)
