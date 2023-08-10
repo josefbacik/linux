@@ -1500,7 +1500,7 @@ static struct dentry *btrfs_mount_root(struct file_system_type *fs_type,
 
 	if (!(flags & SB_RDONLY) && fs_devices->rw_devices == 0) {
 		error = -EACCES;
-		goto error_close_devices;
+		goto error_fs_info;
 	}
 
 	bdev = fs_devices->latest_dev->bdev;
@@ -1508,11 +1508,10 @@ static struct dentry *btrfs_mount_root(struct file_system_type *fs_type,
 		 fs_info);
 	if (IS_ERR(s)) {
 		error = PTR_ERR(s);
-		goto error_close_devices;
+		goto error_fs_info;
 	}
 
 	if (s->s_root) {
-		btrfs_close_devices(fs_devices);
 		btrfs_free_fs_info(fs_info);
 		if ((flags ^ s->s_flags) & SB_RDONLY)
 			error = -EBUSY;
@@ -1533,8 +1532,6 @@ static struct dentry *btrfs_mount_root(struct file_system_type *fs_type,
 
 	return dget(s->s_root);
 
-error_close_devices:
-	btrfs_close_devices(fs_devices);
 error_fs_info:
 	btrfs_free_fs_info(fs_info);
 error_sec_opts:
