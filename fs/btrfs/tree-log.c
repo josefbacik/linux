@@ -4883,7 +4883,7 @@ process:
 		 */
 		if (ret) {
 			clear_em_logging(tree, em);
-			free_extent_map(em);
+			free_extent_map_safe(tree, em);
 			continue;
 		}
 
@@ -4892,10 +4892,12 @@ process:
 		ret = log_one_extent(trans, inode, em, path, ctx);
 		write_lock(&tree->lock);
 		clear_em_logging(tree, em);
-		free_extent_map(em);
+		free_extent_map_safe(tree, em);
 	}
 	WARN_ON(!list_empty(&extents));
 	write_unlock(&tree->lock);
+
+	free_pending_extent_maps(tree);
 
 	if (!ret)
 		ret = btrfs_log_prealloc_extents(trans, inode, path);
