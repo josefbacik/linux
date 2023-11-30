@@ -49,6 +49,48 @@ int fscrypt_file_open(struct inode *inode, struct file *filp)
 }
 EXPORT_SYMBOL_GPL(fscrypt_file_open);
 
+/**
+ * fscrypt_inode_open() - prepare to open a possibly-encrypted regular file
+ * @dir: the directory that contains this inode
+ * @inode: the inode being opened
+ *
+ * Currently, an encrypted regular file can only be opened if its encryption key
+ * is available; access to the raw encrypted contents is not supported.
+ * Therefore, we first set up the inode's encryption key (if not already done)
+ * and return an error if it's unavailable.
+ *
+ * We also verify that if the parent directory is encrypted, then the inode
+ * being opened uses the same encryption policy.  This is needed as part of the
+ * enforcement that all files in an encrypted directory tree use the same
+ * encryption policy, as a protection against certain types of offline attacks.
+ * Note that this check is needed even when opening an *unencrypted* file, since
+ * it's forbidden to have an unencrypted file in an encrypted directory.
+ *
+ * File systems should be using fscrypt_file_open in their open callback.  This
+ * is for file systems that may need to open inodes outside of the normal file
+ * open path, btrfs send for example.
+ *
+ * Return: 0 on success, -ENOKEY if the key is missing, or another -errno code
+ */
+int fscrypt_inode_open(struct inode *dir, struct inode *inode)
+{
+	int err;
+
+	err = fscrypt_require_key(inode);
+	if (err)
+		return err;
+
+	if (IS_ENCRYPTED(dir) &&
+	    !fscrypt_has_permitted_context(dir, inode)) {
+		fscrypt_warn(inode,
+			     "Inconsistent encryption context (parent directory: %lu)",
+			     dir->i_ino);
+		err = -EPERM;
+	}
+	return err;
+}
+EXPORT_SYMBOL_GPL(fscrypt_inode_open);
+
 int __fscrypt_prepare_link(struct inode *inode, struct inode *dir,
 			   struct dentry *dentry)
 {
