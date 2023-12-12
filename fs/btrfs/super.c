@@ -1831,7 +1831,7 @@ static int btrfs_get_tree_super(struct fs_context *fc)
 		struct btrfs_fs_devices *fs_devices = fs_info->fs_devices;
 
 		mutex_lock(&uuid_mutex);
-		ret = btrfs_open_devices(fs_devices, mode, &btrfs_fs_type);
+		ret = btrfs_open_devices(fs_devices, mode, sb);
 		mutex_unlock(&uuid_mutex);
 		if (ret)
 			goto error_deactivate;
@@ -1844,7 +1844,7 @@ static int btrfs_get_tree_super(struct fs_context *fc)
 		snprintf(sb->s_id, sizeof(sb->s_id), "%pg",
 			 fs_devices->latest_dev->bdev);
 		shrinker_debugfs_rename(sb->s_shrink, "sb-btrfs:%s", sb->s_id);
-		btrfs_sb(sb)->bdev_holder = &btrfs_fs_type;
+		btrfs_sb(sb)->bdev_holder = sb;
 		ret = btrfs_fill_super(sb, fs_devices, NULL);
 		if (ret)
 			goto error_deactivate;
