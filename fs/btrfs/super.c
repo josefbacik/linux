@@ -1810,10 +1810,8 @@ static int btrfs_get_tree_super(struct fs_context *fc)
 	if (ret)
 		return ret;
 
-	if (!(fc->sb_flags & SB_RDONLY) && fs_devices->rw_devices == 0) {
-		ret = -EACCES;
-		goto error;
-	}
+	if (!(fc->sb_flags & SB_RDONLY) && fs_devices->rw_devices == 0)
+		return -EACCES;
 
 	bdev = fs_devices->latest_dev->bdev;
 
@@ -1827,15 +1825,12 @@ static int btrfs_get_tree_super(struct fs_context *fc)
 	 * otherwise it's tied to the lifetime of the super_block.
 	 */
 	sb = sget_fc(fc, btrfs_fc_test_super, set_anon_super_fc);
-	if (IS_ERR(sb)) {
-		ret = PTR_ERR(sb);
-		goto error;
-	}
+	if (IS_ERR(sb))
+		return PTR_ERR(sb);
 
 	set_device_specific_options(fs_info);
 
 	if (sb->s_root) {
-		btrfs_close_devices(fs_devices);
 		if ((fc->sb_flags ^ sb->s_flags) & SB_RDONLY)
 			ret = -EBUSY;
 	} else {
@@ -1854,10 +1849,6 @@ static int btrfs_get_tree_super(struct fs_context *fc)
 
 	fc->root = dget(sb->s_root);
 	return 0;
-
-error:
-	btrfs_close_devices(fs_devices);
-	return ret;
 }
 
 /*
