@@ -1782,7 +1782,6 @@ static int btrfs_get_tree_super(struct fs_context *fc)
 	struct btrfs_fs_info *fs_info = fc->s_fs_info;
 	struct btrfs_fs_context *ctx = fc->fs_private;
 	struct btrfs_fs_devices *fs_devices = NULL;
-	struct block_device *bdev;
 	struct btrfs_device *device;
 	struct super_block *sb;
 	blk_mode_t mode = sb_open_mode(fc->sb_flags);
@@ -1805,15 +1804,8 @@ static int btrfs_get_tree_super(struct fs_context *fc)
 	fs_devices = device->fs_devices;
 	fs_info->fs_devices = fs_devices;
 
-	ret = btrfs_open_devices(fs_devices, mode, &btrfs_fs_type);
+	fs_devices->in_use++;
 	mutex_unlock(&uuid_mutex);
-	if (ret)
-		return ret;
-
-	if (!(fc->sb_flags & SB_RDONLY) && fs_devices->rw_devices == 0)
-		return -EACCES;
-
-	bdev = fs_devices->latest_dev->bdev;
 
 	/*
 	 * From now on the error handling is not straightforward.
@@ -1831,24 +1823,41 @@ static int btrfs_get_tree_super(struct fs_context *fc)
 	set_device_specific_options(fs_info);
 
 	if (sb->s_root) {
-		if ((fc->sb_flags ^ sb->s_flags) & SB_RDONLY)
+		if ((fc->sb_flags ^ sb->s_flags) & SB_RDONLY) {
 			ret = -EBUSY;
+			goto error_deactivate;
+		}
 	} else {
-		snprintf(sb->s_id, sizeof(sb->s_id), "%pg", bdev);
+		struct btrfs_fs_devices *fs_devices = fs_info->fs_devices;
+
+		mutex_lock(&uuid_mutex);
+		ret = btrfs_open_devices(fs_devices, mode, &btrfs_fs_type);
+		mutex_unlock(&uuid_mutex);
+		if (ret)
+			goto error_deactivate;
+
+		if (!(fc->sb_flags & SB_RDONLY) && !fs_devices->rw_devices) {
+			ret = -EACCES;
+			goto error_deactivate;
+		}
+
+		snprintf(sb->s_id, sizeof(sb->s_id), "%pg",
+			 fs_devices->latest_dev->bdev);
 		shrinker_debugfs_rename(sb->s_shrink, "sb-btrfs:%s", sb->s_id);
 		btrfs_sb(sb)->bdev_holder = &btrfs_fs_type;
 		ret = btrfs_fill_super(sb, fs_devices, NULL);
-	}
-
-	if (ret) {
-		deactivate_locked_super(sb);
-		return ret;
+		if (ret)
+			goto error_deactivate;
 	}
 
 	btrfs_clear_oneshot_options(fs_info);
 
 	fc->root = dget(sb->s_root);
 	return 0;
+
+error_deactivate:
+	deactivate_locked_super(sb);
+	return ret;
 }
 
 /*
