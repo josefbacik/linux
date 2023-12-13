@@ -407,54 +407,25 @@ static int record_root_in_trans(struct btrfs_trans_handle *trans,
 	int ret = 0;
 
 	if ((test_bit(BTRFS_ROOT_SHAREABLE, &root->state) &&
-	    root->last_trans < trans->transid) || force) {
+	     !test_bit(BTRFS_ROOT_RECORDED, &root->state)) || force) {
 		WARN_ON(!force && root->commit_root != root->node);
 
-		/*
-		 * see below for IN_TRANS_SETUP usage rules
-		 * we have the reloc mutex held now, so there
-		 * is only one writer in this function
-		 */
-		set_bit(BTRFS_ROOT_IN_TRANS_SETUP, &root->state);
-
-		/* make sure readers find IN_TRANS_SETUP before
-		 * they find our root->last_trans update
-		 */
-		smp_wmb();
-
 		spin_lock(&fs_info->fs_roots_radix_lock);
-		if (root->last_trans == trans->transid && !force) {
-			spin_unlock(&fs_info->fs_roots_radix_lock);
-			return 0;
-		}
 		radix_tree_tag_set(&fs_info->fs_roots_radix,
 				   (unsigned long)root->root_key.objectid,
 				   BTRFS_ROOT_TRANS_TAG);
-		spin_unlock(&fs_info->fs_roots_radix_lock);
 		root->last_trans = trans->transid;
+		spin_unlock(&fs_info->fs_roots_radix_lock);
 
-		/* this is pretty tricky.  We don't want to
-		 * take the relocation lock in btrfs_record_root_in_trans
-		 * unless we're really doing the first setup for this root in
-		 * this transaction.
-		 *
-		 * Normally we'd use root->last_trans as a flag to decide
-		 * if we want to take the expensive mutex.
-		 *
-		 * But, we have to set root->last_trans before we
-		 * init the relocation root, otherwise, we trip over warnings
-		 * in ctree.c.  The solution used here is to flag ourselves
-		 * with root IN_TRANS_SETUP.  When this is 1, we're still
-		 * fixing up the reloc trees and everyone must wait.
-		 *
-		 * When this is zero, they can trust root->last_trans and fly
-		 * through btrfs_record_root_in_trans without having to take the
-		 * lock.  smp_wmb() makes sure that all the writes above are
-		 * done before we pop in the zero below
-		 */
 		ret = btrfs_init_reloc_root(trans, root);
+
+		/*
+		 * We need this so that the set_bit doesn't get re-ordered
+		 * before btrfs_init_reloc_root and that root->last_trans is set
+		 * properly before we set the bit.
+		 */
 		smp_mb__before_atomic();
-		clear_bit(BTRFS_ROOT_IN_TRANS_SETUP, &root->state);
+		set_bit(BTRFS_ROOT_RECORDED, &root->state);
 	}
 	return ret;
 }
@@ -476,6 +447,7 @@ void btrfs_add_dropped_root(struct btrfs_trans_handle *trans,
 	radix_tree_tag_clear(&fs_info->fs_roots_radix,
 			     (unsigned long)root->root_key.objectid,
 			     BTRFS_ROOT_TRANS_TAG);
+	clear_bit(BTRFS_ROOT_RECORDED, &root->state);
 	spin_unlock(&fs_info->fs_roots_radix_lock);
 }
 
@@ -488,13 +460,7 @@ int btrfs_record_root_in_trans(struct btrfs_trans_handle *trans,
 	if (!test_bit(BTRFS_ROOT_SHAREABLE, &root->state))
 		return 0;
 
-	/*
-	 * see record_root_in_trans for comments about IN_TRANS_SETUP usage
-	 * and barriers
-	 */
-	smp_rmb();
-	if (root->last_trans == trans->transid &&
-	    !test_bit(BTRFS_ROOT_IN_TRANS_SETUP, &root->state))
+	if (test_bit(BTRFS_ROOT_RECORDED, &root->state))
 		return 0;
 
 	mutex_lock(&fs_info->reloc_mutex);
@@ -1531,6 +1497,7 @@ static noinline int commit_fs_roots(struct btrfs_trans_handle *trans)
 			radix_tree_tag_clear(&fs_info->fs_roots_radix,
 					(unsigned long)root->root_key.objectid,
 					BTRFS_ROOT_TRANS_TAG);
+			clear_bit(BTRFS_ROOT_RECORDED, &root->state);
 			spin_unlock(&fs_info->fs_roots_radix_lock);
 
 			btrfs_free_log(trans, root);
