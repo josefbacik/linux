@@ -5352,7 +5352,15 @@ static noinline void reada_walk_down(struct btrfs_trans_handle *trans,
 		/* We don't care about errors in readahead. */
 		if (ret < 0)
 			continue;
-		BUG_ON(refs == 0);
+
+		/*
+		 * This could be racey, it's conceivable that we raced and end
+		 * up with a bogus refs count, if that's the case just skip, if
+		 * we are actually corrupt we will notice when we look up
+		 * everything again with our locks.
+		 */
+		if (refs == 0)
+			continue;
 
 		/* If we don't need to visit this node don't reada. */
 		if (!visit_node_for_delete(root, wc, eb, refs, flags, slot))
@@ -5401,7 +5409,10 @@ static noinline int walk_down_proc(struct btrfs_trans_handle *trans,
 					       NULL);
 		if (ret)
 			return ret;
-		BUG_ON(wc->refs[level] == 0);
+		if (unlikely(wc->refs[level] == 0)) {
+			btrfs_err(fs_info, "Missing references.");
+			return -EUCLEAN;
+		}
 	}
 
 	if (wc->stage == DROP_REFERENCE) {
@@ -5665,7 +5676,7 @@ static noinline int do_walk_down(struct btrfs_trans_handle *trans,
 
 	if (unlikely(wc->refs[level - 1] == 0)) {
 		btrfs_err(fs_info, "Missing references.");
-		ret = -EIO;
+		ret = -EUCLEAN;
 		goto out_unlock;
 	}
 	wc->lookup_info = 0;
@@ -5776,7 +5787,10 @@ static noinline int walk_up_proc(struct btrfs_trans_handle *trans,
 				path->locks[level] = 0;
 				return ret;
 			}
-			BUG_ON(wc->refs[level] == 0);
+			if (unlikely(wc->refs[level] == 0)) {
+				btrfs_err(fs_info, "Missing refs.");
+				return -EUCLEAN;
+			}
 			if (wc->refs[level] == 1) {
 				btrfs_tree_unlock_rw(eb, path->locks[level]);
 				path->locks[level] = 0;
