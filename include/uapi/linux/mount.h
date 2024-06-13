@@ -189,10 +189,12 @@ struct mnt_id_req {
 	__u32 spare;
 	__u64 mnt_id;
 	__u64 param;
+	__u64 mnt_ns_id;
 };
 
 /* List of all mnt_id_req versions. */
 #define MNT_ID_REQ_SIZE_VER0	24 /* sizeof first published struct */
+#define MNT_ID_REQ_SIZE_VER1	32 /* mnt_ns_id was added */
 
 /*
  * @mask bits for statmount(2)
@@ -206,9 +208,19 @@ struct mnt_id_req {
 #define STATMOUNT_MNT_NS_ID		0x00000040U	/* Want/got mnt_ns_id */
 
 /*
+ * @flags that can be passed into statmount(2)
+ */
+#define STATMOUNT_FLAG_MNT_NS_ID	(1 << 0)	/* User has filled in
+							   req->mnt_ns_id and is
+							   stating a mount entry
+							   in that mount
+							   namespace. */
+
+/*
  * Special @mnt_id values that can be passed to listmount
  */
 #define LSMT_ROOT		0xffffffffffffffff	/* root mount */
 #define LISTMOUNT_REVERSE	(1 << 0) /* List later mounts first */
+#define LISTMOUNT_MNT_NS_ID	(1 << 1) /* List a different mount ns */
 
 #endif /* _UAPI_LINUX_MOUNT_H */

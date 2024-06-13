@@ -113,11 +113,37 @@ static int mnt_ns_cmp(const unsigned int inum, const struct mnt_namespace *b)
 	return 0;
 }
 
+static int mnt_ns_rb_cmp(const void *key, const struct rb_node *n)
+{
+	struct mnt_namespace *ns = rb_entry(n, struct mnt_namespace, node);
+	unsigned int inum = *(unsigned int *)key;
+	return mnt_ns_cmp(inum, ns);
+}
+
 static bool mnt_ns_less(struct rb_node *a, const struct rb_node *b)
 {
 	struct mnt_namespace *ns_a = rb_entry(a, struct mnt_namespace, node);
 	struct mnt_namespace *ns_b = rb_entry(b, struct mnt_namespace, node);
 	return mnt_ns_cmp(ns_a->ns.inum, ns_b) < 0;
+}
+
+static struct mnt_namespace *lookup_mnt_ns(unsigned int id)
+{
+	struct rb_node *n = rb_find(&id, &mnt_ns_root, mnt_ns_rb_cmp);
+	struct mnt_namespace *ns;
+
+	if (!n)
+		return ERR_PTR(-ENOENT);
+
+	ns = rb_entry(n, struct mnt_namespace, node);
+
+	/*
+	 * We don't want to allow access to namespaces that aren't in our
+	 * current user namespace.
+	 */
+	if (!in_userns(current_user_ns(), ns->user_ns))
+		return ERR_PTR(-ENOENT);
+	return ns;
 }
 
 static inline void lock_mount_hash(void)
@@ -5037,7 +5063,7 @@ static int copy_mnt_id_req(const struct mnt_id_req __user *req,
 	int ret;
 	size_t usize;
 
-	BUILD_BUG_ON(sizeof(struct mnt_id_req) != MNT_ID_REQ_SIZE_VER0);
+	BUILD_BUG_ON(sizeof(struct mnt_id_req) != MNT_ID_REQ_SIZE_VER1);
 
 	ret = get_user(usize, &req->size);
 	if (ret)
@@ -5060,26 +5086,44 @@ SYSCALL_DEFINE4(statmount, const struct mnt_id_req __user *, req,
 		unsigned int, flags)
 {
 	struct vfsmount *mnt;
+	struct mnt_namespace *mnt_ns;
 	struct mnt_id_req kreq;
 	struct kstatmount ks;
 	/* We currently support retrieval of 3 strings. */
 	size_t seq_size = 3 * PATH_MAX;
 	int ret;
 
-	if (flags)
+	if (flags & ~STATMOUNT_FLAG_MNT_NS_ID)
 		return -EINVAL;
 
 	ret = copy_mnt_id_req(req, &kreq);
 	if (ret)
 		return ret;
 
+	if ((flags & STATMOUNT_FLAG_MNT_NS_ID) &&
+	    kreq.size < MNT_ID_REQ_SIZE_VER1)
+		return -EINVAL;
 retry:
 	ret = prepare_kstatmount(&ks, &kreq, buf, bufsize, seq_size);
 	if (ret)
 		return ret;
 
 	down_read(&namespace_sem);
-	mnt = lookup_mnt_in_ns(kreq.mnt_id, current->nsproxy->mnt_ns);
+	if (flags & STATMOUNT_FLAG_MNT_NS_ID) {
+		/*
+		 * The inums are unsigned int, so just cast to unsigned int for
+		 * consistency sake.
+		 */
+		mnt_ns = lookup_mnt_ns((unsigned int)kreq.mnt_ns_id);
+		if (IS_ERR(mnt_ns)) {
+			up_read(&namespace_sem);
+			kvfree(ks.seq.buf);
+			return PTR_ERR(mnt_ns);
+		}
+	} else {
+		mnt_ns = current->nsproxy->mnt_ns;
+	}
+	mnt = lookup_mnt_in_ns(kreq.mnt_id, mnt_ns);
 	if (!mnt) {
 		up_read(&namespace_sem);
 		kvfree(ks.seq.buf);
@@ -5159,7 +5203,7 @@ SYSCALL_DEFINE4(listmount, const struct mnt_id_req __user *, req, u64 __user *,
 	bool reverse_order;
 	ssize_t ret;
 
-	if (flags & ~LISTMOUNT_REVERSE)
+	if (flags & ~(LISTMOUNT_REVERSE | LISTMOUNT_MNT_NS_ID))
 		return -EINVAL;
 
 	if (unlikely(nr_mnt_ids > maxcount))
@@ -5171,10 +5215,20 @@ SYSCALL_DEFINE4(listmount, const struct mnt_id_req __user *, req, u64 __user *,
 	ret = copy_mnt_id_req(req, &kreq);
 	if (ret)
 		return ret;
+
+	if ((flags & LISTMOUNT_MNT_NS_ID) && kreq.size < MNT_ID_REQ_SIZE_VER1)
+		return -EINVAL;
+
 	mnt_parent_id = kreq.mnt_id;
 	last_mnt_id = kreq.param;
 
 	guard(rwsem_read)(&namespace_sem);
+
+	if (flags & LISTMOUNT_MNT_NS_ID) {
+		ns = lookup_mnt_ns((unsigned int)kreq.mnt_ns_id);
+		if (IS_ERR(ns))
+			return PTR_ERR(ns);
+	}
 
 	get_fs_root(current->fs, &root);
 	if (mnt_parent_id == LSMT_ROOT) {
