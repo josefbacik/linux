@@ -16,6 +16,7 @@ struct mnt_namespace {
 	u64 event;
 	unsigned int		nr_mounts; /* # of mounts in the namespace */
 	unsigned int		pending_mounts;
+	struct rb_node		node;
 } __randomize_layout;
 
 struct mnt_pcp {

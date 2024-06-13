@@ -78,6 +78,7 @@ static struct kmem_cache *mnt_cache __ro_after_init;
 static DECLARE_RWSEM(namespace_sem);
 static HLIST_HEAD(unmounted);	/* protected by namespace_sem */
 static LIST_HEAD(ex_mountpoints); /* protected by namespace_sem */
+static struct rb_root mnt_ns_root = RB_ROOT; /* protected by namespace_sem */
 
 struct mount_kattr {
 	unsigned int attr_set;
@@ -102,6 +103,22 @@ EXPORT_SYMBOL_GPL(fs_kobj);
  * tree or hash is modified or when a vfsmount structure is modified.
  */
 __cacheline_aligned_in_smp DEFINE_SEQLOCK(mount_lock);
+
+static int mnt_ns_cmp(const unsigned int inum, const struct mnt_namespace *b)
+{
+	if (inum < b->ns.inum)
+		return -1;
+	if (inum > b->ns.inum)
+		return 1;
+	return 0;
+}
+
+static bool mnt_ns_less(struct rb_node *a, const struct rb_node *b)
+{
+	struct mnt_namespace *ns_a = rb_entry(a, struct mnt_namespace, node);
+	struct mnt_namespace *ns_b = rb_entry(b, struct mnt_namespace, node);
+	return mnt_ns_cmp(ns_a->ns.inum, ns_b) < 0;
+}
 
 static inline void lock_mount_hash(void)
 {
@@ -3730,8 +3747,12 @@ static void dec_mnt_namespaces(struct ucounts *ucounts)
 
 static void free_mnt_ns(struct mnt_namespace *ns)
 {
-	if (!is_anon_ns(ns))
+	if (!is_anon_ns(ns)) {
+		namespace_lock();
+		rb_erase(&ns->node, &mnt_ns_root);
+		namespace_unlock();
 		ns_free_inum(&ns->ns);
+	}
 	dec_mnt_namespaces(ns->ucounts);
 	put_user_ns(ns->user_ns);
 	kfree(ns);
@@ -3774,6 +3795,7 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns, bool a
 		new_ns->seq = atomic64_add_return(1, &mnt_ns_seq);
 	refcount_set(&new_ns->ns.count, 1);
 	new_ns->mounts = RB_ROOT;
+	RB_CLEAR_NODE(&new_ns->node);
 	init_waitqueue_head(&new_ns->poll);
 	new_ns->user_ns = get_user_ns(user_ns);
 	new_ns->ucounts = ucounts;
@@ -3850,6 +3872,7 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 		while (p->mnt.mnt_root != q->mnt.mnt_root)
 			p = next_mnt(skip_mnt_tree(p), old);
 	}
+	rb_add(&ns->node, &mnt_ns_root, mnt_ns_less);
 	namespace_unlock();
 
 	if (rootmnt)
@@ -5207,6 +5230,10 @@ static void __init init_mount_tree(void)
 
 	set_fs_pwd(current->fs, &root);
 	set_fs_root(current->fs, &root);
+
+	namespace_lock();
+	rb_add(&ns->node, &mnt_ns_root, mnt_ns_less);
+	namespace_unlock();
 }
 
 void __init mnt_init(void)
