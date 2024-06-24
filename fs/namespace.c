@@ -5003,6 +5003,10 @@ static int statmount_string(struct kstatmount *s, u64 flag)
 		sm->mnt_point = seq->count;
 		ret = statmount_mnt_point(s, seq);
 		break;
+	case STATMOUNT_MNT_OPTS:
+		sm->mnt_opts = seq->count;
+		ret = show_mount_opts(seq, s->mnt);
+		break;
 	default:
 		WARN_ON_ONCE(true);
 		return -EINVAL;
@@ -5078,6 +5082,9 @@ static int do_statmount(struct kstatmount *s)
 
 	if (!err && s->mask & STATMOUNT_MNT_POINT)
 		err = statmount_string(s, STATMOUNT_MNT_POINT);
+
+	if (!err && s->mask & STATMOUNT_MNT_OPTS)
+		err = statmount_string(s, STATMOUNT_MNT_OPTS);
 
 	if (!err && s->mask & STATMOUNT_MNT_NS_ID)
 		statmount_mnt_ns_id(s, ns);
