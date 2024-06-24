@@ -321,3 +321,8 @@ struct stashed_operations {
 int path_from_stashed(struct dentry **stashed, struct vfsmount *mnt, void *data,
 		      struct path *path);
 void stashed_dentry_prune(struct dentry *dentry);
+
+/*
+ * fs/proc_namespace.c
+ */
+int show_mount_opts(struct seq_file *seq, struct vfsmount *mnt);

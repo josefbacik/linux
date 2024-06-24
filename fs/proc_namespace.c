@@ -84,6 +84,22 @@ static void show_vfsmnt_opts(struct seq_file *m, struct vfsmount *mnt)
 		seq_puts(m, ",idmapped");
 }
 
+int show_mount_opts(struct seq_file *seq, struct vfsmount *mnt)
+{
+	struct dentry *dentry = mnt->mnt_root;
+	struct super_block *sb = dentry->d_sb;
+	int ret;
+
+	seq_puts(seq, __mnt_is_readonly(mnt) ? "ro" : "rw");
+	ret = show_sb_opts(seq, sb);
+	if (ret)
+		return ret;
+	show_vfsmnt_opts(seq, mnt);
+	if (sb->s_op->show_options)
+		ret = sb->s_op->show_options(seq, dentry);
+	return ret;
+}
+
 static inline void mangle(struct seq_file *m, const char *s)
 {
 	seq_escape(m, s, " \t\n\\#");
@@ -120,13 +136,8 @@ static int show_vfsmnt(struct seq_file *m, struct vfsmount *mnt)
 		goto out;
 	seq_putc(m, ' ');
 	show_type(m, sb);
-	seq_puts(m, __mnt_is_readonly(mnt) ? " ro" : " rw");
-	err = show_sb_opts(m, sb);
-	if (err)
-		goto out;
-	show_vfsmnt_opts(m, mnt);
-	if (sb->s_op->show_options)
-		err = sb->s_op->show_options(m, mnt_path.dentry);
+	seq_putc(m, ' ');
+	err = show_mount_opts(m, mnt);
 	seq_puts(m, " 0 0\n");
 out:
 	return err;
