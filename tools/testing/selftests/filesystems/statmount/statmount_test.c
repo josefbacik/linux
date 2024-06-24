@@ -64,6 +64,20 @@ static struct statmount *statmount_alloc(uint64_t mnt_id, uint64_t mask, unsigne
 	return buf;
 }
 
+static void read_file(const char *path, void *buf, size_t len)
+{
+	int fd = open(path, O_RDONLY);
+	ssize_t ret;
+
+	if (fd < 0)
+		ksft_exit_fail_msg("opening %s for read: %s\n", path, strerror(errno));
+
+	ret = read(fd, buf, len);
+	if (ret < 0)
+		ksft_exit_fail_msg("reading from %s: %s\n", path, strerror(errno));
+	close(fd);
+}
+
 static void write_file(const char *path, const char *val)
 {
 	int fd = open(path, O_WRONLY);
@@ -107,6 +121,8 @@ static char root_mntpoint[] = "/tmp/statmount_test_root.XXXXXX";
 static int orig_root;
 static uint64_t root_id, parent_id;
 static uint32_t old_root_id, old_parent_id;
+static char proc_mounts_buf[4096];
+static char proc_mountinfo_buf[4096];
 
 static void cleanup_namespace(void)
 {
@@ -133,6 +149,11 @@ static void setup_namespace(void)
 	write_file("/proc/self/setgroups", "deny");
 	sprintf(buf, "0 %d 1", gid);
 	write_file("/proc/self/gid_map", buf);
+
+	memset(proc_mounts_buf, 0, 4096);
+	memset(proc_mountinfo_buf, 0, 4096);
+	read_file("/proc/self/mounts", proc_mounts_buf, 4095);
+	read_file("/proc/self/mountinfo", proc_mountinfo_buf, 4095);
 
 	ret = mount("", "/", NULL, MS_REC|MS_PRIVATE, NULL);
 	if (ret == -1)
@@ -435,6 +456,113 @@ static void test_statmount_fs_type(void)
 	free(sm);
 }
 
+/* Search proc_mountinfo_buf for our mount point. */
+static char *find_mnt_point(void)
+{
+	char buf[256];
+	char *cur, *end;
+
+	snprintf(buf, 256, "%llu", (unsigned long long)old_parent_id);
+	cur = strstr(proc_mountinfo_buf, buf);
+	if (!cur)
+		ksft_exit_fail_msg("couldn't find %llu in /proc/self/mountinfo\n",
+				   (unsigned long long)old_parent_id);
+
+	/*
+	 * The format is
+	 *
+	 * <mnt id> <parent mnt id> <device> <parent mnt point> <mnt point>
+	 *
+	 * We are currently at <mnt id>, we must skip the next 4 columns.
+	 */
+	for (int i = 0; i < 4; i++) {
+		cur = strchr(cur, ' ');
+		if (!cur)
+			ksft_exit_fail_msg("/proc/self/mountinfo isn't formatted as expected\n");
+		cur++;
+	}
+
+	/*
+	 * We are now positioned right at <mnt point>, find the next space and
+	 * \0 it out so we have the mount point isolated.
+	 */
+	end = strchr(cur, ' ');
+	if (!end)
+		ksft_exit_fail_msg("/proc/self/mountinfo isn't formatted as expected\n");
+	*end = '\0';
+	return cur;
+}
+
+static void test_statmount_mnt_opts(void)
+{
+	struct statmount *sm;
+	char search_buf[256];
+	const char *opts;
+	const char *statmount_opts;
+	const char *mntpoint;
+	char *end;
+
+	sm = statmount_alloc(root_id, STATMOUNT_MNT_OPTS, 0);
+	if (!sm) {
+		ksft_test_result_fail("statmount mnt opts: %s\n",
+				      strerror(errno));
+		return;
+	}
+
+	mntpoint = find_mnt_point();
+	snprintf(search_buf, 256, " %s ", mntpoint);
+
+	/*
+	 * This fun bit of string parsing is to extract out the mount options
+	 * for our root id.  Normally it would be the first entry but we don't
+	 * want to rely on on that, so we're going to search for the path
+	 * manually.  The format is
+	 *
+	 * <device> <mnt point> <fs type> <mnt options> ...
+	 *
+	 * We start by searching for <mnt point> and then advancing along until
+	 * we get the <mnt options> field.
+	 */
+
+	/* Look for the root entry. */
+	opts = strstr(proc_mounts_buf, search_buf);
+	if (!opts)
+		ksft_exit_fail_msg("no mount entry for / in /proc/mounts\n");
+
+	/* Now advance us past that chunk, and into the fstype. */
+	opts += strlen(search_buf);
+
+	/* Now find the next space. */
+	opts = strchr(opts, ' ');
+	if (!opts)
+		ksft_exit_fail_msg("/proc/mounts isn't formatted as expected\n");
+
+	/* Now advance one to the start of where the mount options should be. */
+	opts++;
+
+	/*
+	 * Now we go all the way to the end of opts and set that value to \0 so
+	 * we can easily strcmp what we got from statmount().
+	 *
+	 * If the mount options have a space in them this will mess up the test,
+	 * but I don't know if that happens anywhere.  If this fails on that
+	 * then we need to update the test to handle that, but for now I'm going
+	 * to pretend lik that never happens.
+	 */
+	end = strchr(opts, ' ');
+	if (!end)
+		ksft_exit_fail_msg("/proc/mounts isn't formatted as expected\n");
+	*end = '\0';
+
+	statmount_opts = sm->str + sm->mnt_opts;
+	if (strcmp(statmount_opts, opts) != 0)
+		ksft_test_result_fail("unexpected mount options: '%s' != '%s'\n",
+				      statmount_opts, opts);
+	else
+		ksft_test_result_pass("statmount mount options\n");
+	free(sm);
+}
+
 static void test_statmount_string(uint64_t mask, size_t off, const char *name)
 {
 	struct statmount *sm;
@@ -561,7 +689,7 @@ int main(void)
 
 	setup_namespace();
 
-	ksft_set_plan(14);
+	ksft_set_plan(15);
 	test_listmount_empty_root();
 	test_statmount_zero_mask();
 	test_statmount_mnt_basic();
@@ -569,6 +697,7 @@ int main(void)
 	test_statmount_mnt_root();
 	test_statmount_mnt_point();
 	test_statmount_fs_type();
+	test_statmount_mnt_opts();
 	test_statmount_string(STATMOUNT_MNT_ROOT, str_off(mnt_root), "mount root");
 	test_statmount_string(STATMOUNT_MNT_POINT, str_off(mnt_point), "mount point");
 	test_statmount_string(STATMOUNT_FS_TYPE, str_off(fs_type), "fs type");
