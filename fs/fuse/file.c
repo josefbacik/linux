@@ -21,6 +21,7 @@
 #include <linux/filelock.h>
 #include <linux/splice.h>
 #include <linux/task_io_accounting_ops.h>
+#include <linux/iomap.h>
 
 static int fuse_send_open(struct fuse_mount *fm, u64 nodeid,
 			  unsigned int open_flags, int opcode,
@@ -1420,6 +1421,63 @@ static void fuse_dio_unlock(struct kiocb *iocb, bool exclusive)
 	}
 }
 
+static struct folio *fuse_iomap_get_folio(struct iomap_iter *iter,
+					  loff_t pos, unsigned len)
+{
+	struct file *file = (struct file *)iter->private;
+	struct inode *inode = iter->inode;
+	struct folio *folio;
+	loff_t fsize;
+
+	folio = iomap_get_folio(iter, pos, len);
+	if (IS_ERR(folio))
+		return folio;
+
+	fuse_wait_on_folio_writeback(inode, folio);
+
+	if (folio_test_uptodate(folio))
+		return folio;
+
+	/*
+	 * If we're going to write past EOF then avoid the read, but zero the
+	 * whole thing and mark it uptodate so that if we get a short write we
+	 * don't try to re-read this page, we just carry on.
+	 */
+	fsize = i_size_read(inode);
+	if (fsize <= folio_pos(folio)) {
+		folio_zero_range(folio, 0, folio_size(folio));
+	} else {
+		int err = fuse_do_readpage(file, &folio->page);
+		if (err) {
+			folio_unlock(folio);
+			folio_put(folio);
+			return ERR_PTR(err);
+		}
+	}
+
+	return folio;
+}
+
+static const struct iomap_folio_ops fuse_iomap_folio_ops = {
+	.get_folio = fuse_iomap_get_folio,
+};
+
+static int fuse_iomap_begin_write(struct inode *inode, loff_t pos, loff_t length,
+				  unsigned flags, struct iomap *iomap,
+				  struct iomap *srcmap)
+{
+	iomap->type = IOMAP_DELALLOC;
+	iomap->addr = IOMAP_NULL_ADDR;
+	iomap->offset = pos;
+	iomap->length = length;
+	iomap->folio_ops = &fuse_iomap_folio_ops;
+	return 0;
+}
+
+static const struct iomap_ops fuse_iomap_write_ops = {
+	.iomap_begin = fuse_iomap_begin_write,
+};
+
 static ssize_t fuse_cache_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
 	struct file *file = iocb->ki_filp;
@@ -1428,6 +1486,7 @@ static ssize_t fuse_cache_write_iter(struct kiocb *iocb, struct iov_iter *from)
 	struct inode *inode = mapping->host;
 	ssize_t err, count;
 	struct fuse_conn *fc = get_fuse_conn(inode);
+	bool writethrough = (fc->writeback_cache == 0);
 
 	if (fc->writeback_cache) {
 		/* Update size (EOF optimization) and mode (SUID clearing) */
@@ -1438,14 +1497,10 @@ static ssize_t fuse_cache_write_iter(struct kiocb *iocb, struct iov_iter *from)
 
 		if (fc->handle_killpriv_v2 &&
 		    setattr_should_drop_suidgid(&nop_mnt_idmap,
-						file_inode(file))) {
-			goto writethrough;
-		}
-
-		return generic_file_write_iter(iocb, from);
+						file_inode(file)))
+			writethrough = true;
 	}
 
-writethrough:
 	inode_lock(inode);
 
 	err = count = generic_write_checks(iocb, from);
@@ -1464,8 +1519,12 @@ writethrough:
 			goto out;
 		written = direct_write_fallback(iocb, from, written,
 				fuse_perform_write(iocb, from));
-	} else {
+	} else if (writethrough) {
 		written = fuse_perform_write(iocb, from);
+	} else {
+		written = iomap_file_buffered_write(iocb, from,
+						    &fuse_iomap_write_ops,
+						    file);
 	}
 out:
 	inode_unlock(inode);
@@ -2408,85 +2467,6 @@ out:
 	return err;
 }
 
-/*
- * It's worthy to make sure that space is reserved on disk for the write,
- * but how to implement it without killing performance need more thinking.
- */
-static int fuse_write_begin(struct file *file, struct address_space *mapping,
-		loff_t pos, unsigned len, struct page **pagep, void **fsdata)
-{
-	pgoff_t index = pos >> PAGE_SHIFT;
-	struct fuse_conn *fc = get_fuse_conn(file_inode(file));
-	struct page *page;
-	loff_t fsize;
-	int err = -ENOMEM;
-
-	WARN_ON(!fc->writeback_cache);
-
-	page = grab_cache_page_write_begin(mapping, index);
-	if (!page)
-		goto error;
-
-	fuse_wait_on_page_writeback(mapping->host, page->index);
-
-	if (PageUptodate(page) || len == PAGE_SIZE)
-		goto success;
-	/*
-	 * Check if the start this page comes after the end of file, in which
-	 * case the readpage can be optimized away.
-	 */
-	fsize = i_size_read(mapping->host);
-	if (fsize <= (pos & PAGE_MASK)) {
-		size_t off = pos & ~PAGE_MASK;
-		if (off)
-			zero_user_segment(page, 0, off);
-		goto success;
-	}
-	err = fuse_do_readpage(file, page);
-	if (err)
-		goto cleanup;
-success:
-	*pagep = page;
-	return 0;
-
-cleanup:
-	unlock_page(page);
-	put_page(page);
-error:
-	return err;
-}
-
-static int fuse_write_end(struct file *file, struct address_space *mapping,
-		loff_t pos, unsigned len, unsigned copied,
-		struct page *page, void *fsdata)
-{
-	struct inode *inode = page->mapping->host;
-
-	/* Haven't copied anything?  Skip zeroing, size extending, dirtying. */
-	if (!copied)
-		goto unlock;
-
-	pos += copied;
-	if (!PageUptodate(page)) {
-		/* Zero any unwritten bytes at the end of the page */
-		size_t endoff = pos & ~PAGE_MASK;
-		if (endoff)
-			zero_user_segment(page, endoff, PAGE_SIZE);
-		SetPageUptodate(page);
-	}
-
-	if (pos > inode->i_size)
-		i_size_write(inode, pos);
-
-	set_page_dirty(page);
-
-unlock:
-	unlock_page(page);
-	put_page(page);
-
-	return copied;
-}
-
 static int fuse_launder_folio(struct folio *folio)
 {
 	int err = 0;
@@ -3352,8 +3332,6 @@ static const struct address_space_operations fuse_file_aops  = {
 	.migrate_folio	= filemap_migrate_folio,
 	.bmap		= fuse_bmap,
 	.direct_IO	= fuse_direct_IO,
-	.write_begin	= fuse_write_begin,
-	.write_end	= fuse_write_end,
 };
 
 void fuse_init_file_inode(struct inode *inode, unsigned int flags)
