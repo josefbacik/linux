@@ -842,7 +842,7 @@ static void nilfs_clear_inode(struct inode *inode)
 		nilfs_put_root(ii->i_root);
 }
 
-void nilfs_evict_inode(struct inode *inode)
+void nilfs_final_unlink(struct inode *inode)
 {
 	struct nilfs_transaction_info ti;
 	struct super_block *sb = inode->i_sb;
@@ -850,12 +850,9 @@ void nilfs_evict_inode(struct inode *inode)
 	struct the_nilfs *nilfs;
 	int ret;
 
-	if (inode->i_nlink || !ii->i_root || unlikely(is_bad_inode(inode))) {
-		truncate_inode_pages_final(&inode->i_data);
-		clear_inode(inode);
-		nilfs_clear_inode(inode);
+	if (inode->i_nlink || !ii->i_root || unlikely(is_bad_inode(inode)))
 		return;
-	}
+
 	nilfs_transaction_begin(sb, &ti, 0); /* never fails */
 
 	truncate_inode_pages_final(&inode->i_data);
@@ -880,13 +877,10 @@ void nilfs_evict_inode(struct inode *inode)
 	/* TODO: some of the following operations may fail.  */
 	nilfs_truncate_bmap(ii, 0);
 	nilfs_mark_inode_dirty(inode);
-	clear_inode(inode);
 
 	ret = nilfs_ifile_delete_inode(ii->i_root->ifile, inode->i_ino);
 	if (!ret)
 		atomic64_dec(&ii->i_root->inodes_count);
-
-	nilfs_clear_inode(inode);
 
 	if (IS_SYNC(inode))
 		nilfs_set_transaction_flag(NILFS_TI_SYNC);
@@ -895,6 +889,13 @@ void nilfs_evict_inode(struct inode *inode)
 	 * May construct a logical segment and may fail in sync mode.
 	 * But delete_inode has no return value.
 	 */
+}
+
+void nilfs_evict_inode(struct inode *inode)
+{
+	truncate_inode_pages_final(&inode->i_data);
+	clear_inode(inode);
+	nilfs_clear_inode(inode);
 }
 
 int nilfs_setattr(struct mnt_idmap *idmap, struct dentry *dentry,

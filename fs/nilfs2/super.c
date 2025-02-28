@@ -707,6 +707,7 @@ static const struct super_operations nilfs_sops = {
 	.free_inode     = nilfs_free_inode,
 	.dirty_inode    = nilfs_dirty_inode,
 	.evict_inode    = nilfs_evict_inode,
+	.final_unlink	= nilfs_final_unlink,
 	.put_super      = nilfs_put_super,
 	.sync_fs        = nilfs_sync_fs,
 	.freeze_fs	= nilfs_freeze,
