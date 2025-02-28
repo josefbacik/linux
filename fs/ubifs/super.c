@@ -343,7 +343,7 @@ static int ubifs_drop_inode(struct inode *inode)
 	return drop;
 }
 
-static void ubifs_evict_inode(struct inode *inode)
+static void ubifs_final_unlink(struct inode *inode)
 {
 	int err;
 	struct ubifs_info *c = inode->i_sb->s_fs_info;
@@ -357,13 +357,8 @@ static void ubifs_evict_inode(struct inode *inode)
 		 */
 		goto out;
 
-	dbg_gen("inode %lu, mode %#x", inode->i_ino, (int)inode->i_mode);
-	ubifs_assert(c, !atomic_read(&inode->i_count));
-
-	truncate_inode_pages_final(&inode->i_data);
-
 	if (inode->i_nlink)
-		goto done;
+		return;
 
 	if (is_bad_inode(inode))
 		goto out;
@@ -386,7 +381,26 @@ out:
 		c->bi.nospace = c->bi.nospace_rp = 0;
 		smp_wmb();
 	}
-done:
+}
+
+static void ubifs_evict_inode(struct inode *inode)
+{
+	struct ubifs_info *c = inode->i_sb->s_fs_info;
+	struct ubifs_inode *ui = ubifs_inode(inode);
+
+	if (ui->xattr)
+		/*
+		 * Extended attribute inode deletions are fully handled in
+		 * 'ubifs_removexattr()'. These inodes are special and have
+		 * limited usage, so there is nothing to do here.
+		 */
+		goto clear;
+
+	dbg_gen("inode %lu, mode %#x", inode->i_ino, (int)inode->i_mode);
+	ubifs_assert(c, !atomic_read(&inode->i_count));
+
+	truncate_inode_pages_final(&inode->i_data);
+clear:
 	clear_inode(inode);
 	fscrypt_put_encryption_info(inode);
 }
@@ -2009,6 +2023,7 @@ const struct super_operations ubifs_super_operations = {
 	.write_inode   = ubifs_write_inode,
 	.drop_inode    = ubifs_drop_inode,
 	.evict_inode   = ubifs_evict_inode,
+	.final_unlink  = ubifs_final_unlink,
 	.statfs        = ubifs_statfs,
 	.dirty_inode   = ubifs_dirty_inode,
 	.show_options  = ubifs_show_options,
