@@ -152,6 +152,7 @@ static const struct super_operations affs_sops = {
 	.free_inode	= affs_free_inode,
 	.write_inode	= affs_write_inode,
 	.evict_inode	= affs_evict_inode,
+	.final_unlink	= affs_final_unlink,
 	.put_super	= affs_put_super,
 	.sync_fs	= affs_sync_fs,
 	.statfs		= affs_statfs,

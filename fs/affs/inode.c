@@ -257,17 +257,21 @@ out:
 }
 
 void
+affs_final_unlink(struct inode *inode)
+{
+	if (inode->i_nlink)
+		return;
+	inode->i_size = 0;
+	affs_truncate(inode);
+}
+
+void
 affs_evict_inode(struct inode *inode)
 {
 	unsigned long cache_page;
 	pr_debug("evict_inode(ino=%lu, nlink=%u)\n",
 		 inode->i_ino, inode->i_nlink);
 	truncate_inode_pages_final(&inode->i_data);
-
-	if (!inode->i_nlink) {
-		inode->i_size = 0;
-		affs_truncate(inode);
-	}
 
 	invalidate_inode_buffers(inode);
 	clear_inode(inode);
