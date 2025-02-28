@@ -1839,6 +1839,26 @@ static int bch2_vfs_write_inode(struct inode *vinode,
 	return bch2_err_class(ret);
 }
 
+static void bch2_final_unlink(struct inode *vinode)
+{
+	struct bch_fs *c = vinode->i_sb->s_fs_info;
+	struct bch_inode_info *inode = to_bch_ei(vinode);
+
+	if (inode->v.i_nlink || is_bad_inode(&inode->v))
+		return;
+
+	bch2_quota_acct(c, inode->ei_qid, Q_SPC, -((s64) inode->v.i_blocks),
+			KEY_TYPE_QUOTA_WARN);
+	bch2_quota_acct(c, inode->ei_qid, Q_INO, -1, KEY_TYPE_QUOTA_WARN);
+	bch2_inode_rm(c, inode_inum(inode));
+
+	/*
+	 * If we are deleting, we need it present in the vfs hash table
+	 * so that fsck can check if unlinked inodes are still open:
+	 */
+	bch2_inode_hash_remove(c, inode);
+}
+
 static void bch2_evict_inode(struct inode *vinode)
 {
 	struct bch_fs *c = vinode->i_sb->s_fs_info;
@@ -1860,20 +1880,6 @@ static void bch2_evict_inode(struct inode *vinode)
 	clear_inode(&inode->v);
 
 	BUG_ON(!is_bad_inode(&inode->v) && inode->ei_quota_reserved);
-
-	if (delete) {
-		bch2_quota_acct(c, inode->ei_qid, Q_SPC, -((s64) inode->v.i_blocks),
-				KEY_TYPE_QUOTA_WARN);
-		bch2_quota_acct(c, inode->ei_qid, Q_INO, -1,
-				KEY_TYPE_QUOTA_WARN);
-		bch2_inode_rm(c, inode_inum(inode));
-
-		/*
-		 * If we are deleting, we need it present in the vfs hash table
-		 * so that fsck can check if unlinked inodes are still open:
-		 */
-		bch2_inode_hash_remove(c, inode);
-	}
 
 	mutex_lock(&c->vfs_inodes_lock);
 	list_del_init(&inode->ei_vfs_inode_list);
@@ -2120,6 +2126,7 @@ static const struct super_operations bch_super_operations = {
 	.free_inode	= bch2_free_inode,
 	.write_inode	= bch2_vfs_write_inode,
 	.evict_inode	= bch2_evict_inode,
+	.final_unlink	= bch2_final_unlink,
 	.sync_fs	= bch2_sync_fs,
 	.statfs		= bch2_statfs,
 	.show_devname	= bch2_show_devname,
