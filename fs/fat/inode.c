@@ -648,13 +648,18 @@ static void fat_free_eofblocks(struct inode *inode)
 	}
 }
 
+static void fat_final_unlink(struct inode *inode)
+{
+	if (inode->i_nlink)
+		return;
+	inode->i_size = 0;
+	fat_truncate_blocks(inode, 0);
+}
+
 static void fat_evict_inode(struct inode *inode)
 {
 	truncate_inode_pages_final(&inode->i_data);
-	if (!inode->i_nlink) {
-		inode->i_size = 0;
-		fat_truncate_blocks(inode, 0);
-	} else
+	if (inode->i_nlink)
 		fat_free_eofblocks(inode);
 
 	invalidate_inode_buffers(inode);
@@ -937,6 +942,7 @@ static const struct super_operations fat_sops = {
 	.free_inode	= fat_free_inode,
 	.write_inode	= fat_write_inode,
 	.evict_inode	= fat_evict_inode,
+	.final_unlink	= fat_final_unlink,
 	.put_super	= fat_put_super,
 	.statfs		= fat_statfs,
 	.show_options	= fat_show_options,
