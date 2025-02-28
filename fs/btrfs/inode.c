@@ -5305,7 +5305,7 @@ static struct btrfs_trans_handle *evict_refill_and_join(struct btrfs_root *root,
 	return trans;
 }
 
-void btrfs_evict_inode(struct inode *inode)
+void btrfs_final_unlink(struct inode *inode)
 {
 	struct btrfs_fs_info *fs_info;
 	struct btrfs_trans_handle *trans;
@@ -5313,34 +5313,13 @@ void btrfs_evict_inode(struct inode *inode)
 	struct btrfs_block_rsv *rsv = NULL;
 	int ret;
 
-	trace_btrfs_inode_evict(inode);
-
-	if (!root) {
-		fsverity_cleanup_inode(inode);
-		clear_inode(inode);
+	if (!root || is_bad_inode(inode) || !inode->i_nlink)
 		return;
-	}
 
 	fs_info = inode_to_fs_info(inode);
-	evict_inode_truncate_pages(inode);
-
-	if (inode->i_nlink &&
-	    ((btrfs_root_refs(&root->root_item) != 0 &&
-	      btrfs_root_id(root) != BTRFS_ROOT_TREE_OBJECTID) ||
-	     btrfs_is_free_space_inode(BTRFS_I(inode))))
-		goto out;
-
-	if (is_bad_inode(inode))
-		goto out;
 
 	if (test_bit(BTRFS_FS_LOG_RECOVERING, &fs_info->flags))
-		goto out;
-
-	if (inode->i_nlink > 0) {
-		BUG_ON(btrfs_root_refs(&root->root_item) != 0 &&
-		       btrfs_root_id(root) != BTRFS_ROOT_TREE_OBJECTID);
-		goto out;
-	}
+		return;
 
 	/*
 	 * This makes sure the inode item in tree is uptodate and the space for
@@ -5348,7 +5327,7 @@ void btrfs_evict_inode(struct inode *inode)
 	 */
 	ret = btrfs_commit_inode_delayed_inode(BTRFS_I(inode));
 	if (ret)
-		goto out;
+		return;
 
 	/*
 	 * This drops any pending insert or delete operations we have for this
@@ -5360,7 +5339,7 @@ void btrfs_evict_inode(struct inode *inode)
 
 	rsv = btrfs_alloc_block_rsv(fs_info, BTRFS_BLOCK_RSV_TEMP);
 	if (!rsv)
-		goto out;
+		return;
 	rsv->size = btrfs_calc_metadata_size(fs_info, 1);
 	rsv->failfast = true;
 
@@ -5411,14 +5390,22 @@ void btrfs_evict_inode(struct inode *inode)
 		trans->block_rsv = &fs_info->trans_block_rsv;
 		btrfs_end_transaction(trans);
 	}
-
 out:
-	btrfs_free_block_rsv(fs_info, rsv);
 	/*
 	 * If we didn't successfully delete, the orphan item will still be in
 	 * the tree and we'll retry on the next mount. Again, we might also want
 	 * to retry these periodically in the future.
 	 */
+	btrfs_free_block_rsv(fs_info, rsv);
+}
+
+void btrfs_evict_inode(struct inode *inode)
+{
+	trace_btrfs_inode_evict(inode);
+
+	if (BTRFS_I(inode)->root)
+		evict_inode_truncate_pages(inode);
+
 	btrfs_remove_delayed_node(BTRFS_I(inode));
 	fsverity_cleanup_inode(inode);
 	clear_inode(inode);

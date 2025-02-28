@@ -2402,6 +2402,7 @@ static long btrfs_free_cached_objects(struct super_block *sb, struct shrink_cont
 static const struct super_operations btrfs_super_ops = {
 	.drop_inode	= btrfs_drop_inode,
 	.evict_inode	= btrfs_evict_inode,
+	.final_unlink	= btrfs_final_unlink,
 	.put_super	= btrfs_put_super,
 	.sync_fs	= btrfs_sync_fs,
 	.show_options	= btrfs_show_options,
