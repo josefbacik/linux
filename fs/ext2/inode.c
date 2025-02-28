@@ -66,35 +66,39 @@ void ext2_write_failed(struct address_space *mapping, loff_t to)
 	}
 }
 
+void ext2_final_unlink(struct inode *inode)
+{
+	if (inode->i_nlink || is_bad_inode(inode))
+		return;
+
+	dquot_initialize(inode);
+
+	sb_start_intwrite(inode->i_sb);
+	/* set dtime */
+	EXT2_I(inode)->i_dtime	= ktime_get_real_seconds();
+	mark_inode_dirty(inode);
+	__ext2_write_inode(inode, inode_needs_sync(inode));
+	/* truncate to 0 */
+	inode->i_size = 0;
+	if (inode->i_blocks)
+		ext2_truncate_blocks(inode, 0);
+	ext2_xattr_delete_inode(inode);
+
+	ext2_free_inode(inode);
+	sb_end_intwrite(inode->i_sb);
+}
+
 /*
  * Called at the last iput() if i_nlink is zero.
  */
 void ext2_evict_inode(struct inode * inode)
 {
 	struct ext2_block_alloc_info *rsv;
-	int want_delete = 0;
 
-	if (!inode->i_nlink && !is_bad_inode(inode)) {
-		want_delete = 1;
-		dquot_initialize(inode);
-	} else {
+	if (inode->i_nlink || is_bad_inode(inode))
 		dquot_drop(inode);
-	}
 
 	truncate_inode_pages_final(&inode->i_data);
-
-	if (want_delete) {
-		sb_start_intwrite(inode->i_sb);
-		/* set dtime */
-		EXT2_I(inode)->i_dtime	= ktime_get_real_seconds();
-		mark_inode_dirty(inode);
-		__ext2_write_inode(inode, inode_needs_sync(inode));
-		/* truncate to 0 */
-		inode->i_size = 0;
-		if (inode->i_blocks)
-			ext2_truncate_blocks(inode, 0);
-		ext2_xattr_delete_inode(inode);
-	}
 
 	invalidate_inode_buffers(inode);
 	clear_inode(inode);
@@ -104,11 +108,6 @@ void ext2_evict_inode(struct inode * inode)
 	EXT2_I(inode)->i_block_alloc_info = NULL;
 	if (unlikely(rsv))
 		kfree(rsv);
-
-	if (want_delete) {
-		ext2_free_inode(inode);
-		sb_end_intwrite(inode->i_sb);
-	}
 }
 
 typedef struct {
