@@ -156,6 +156,7 @@ extern struct buffer_head *udf_bread(struct inode *inode, udf_pblk_t block,
 				      int create, int *err);
 extern int udf_setsize(struct inode *, loff_t);
 extern void udf_evict_inode(struct inode *);
+extern void udf_final_unlink(struct inode *inode);
 extern int udf_write_inode(struct inode *, struct writeback_control *wbc);
 extern int inode_bmap(struct inode *inode, sector_t block,
 		      struct extent_position *pos, struct kernel_lb_addr *eloc,

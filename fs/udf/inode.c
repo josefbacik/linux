@@ -133,17 +133,21 @@ static void udf_update_extent_cache(struct inode *inode, loff_t estart,
 	spin_unlock(&iinfo->i_extent_cache_lock);
 }
 
+void udf_final_unlink(struct inode *inode)
+{
+	if (inode->i_nlink || is_bad_inode(inode))
+		return;
+
+	udf_setsize(inode, 0);
+	udf_update_inode(inode, IS_SYNC(inode));
+	udf_free_inode(inode);
+}
+
 void udf_evict_inode(struct inode *inode)
 {
 	struct udf_inode_info *iinfo = UDF_I(inode);
-	int want_delete = 0;
 
 	if (!is_bad_inode(inode)) {
-		if (!inode->i_nlink) {
-			want_delete = 1;
-			udf_setsize(inode, 0);
-			udf_update_inode(inode, IS_SYNC(inode));
-		}
 		if (iinfo->i_alloc_type != ICBTAG_FLAG_AD_IN_ICB &&
 		    inode->i_size != iinfo->i_lenExtents) {
 			udf_warn(inode->i_sb,
@@ -159,9 +163,6 @@ void udf_evict_inode(struct inode *inode)
 	kfree(iinfo->i_data);
 	iinfo->i_data = NULL;
 	udf_clear_extent_cache(inode);
-	if (want_delete) {
-		udf_free_inode(inode);
-	}
 }
 
 static void udf_write_failed(struct address_space *mapping, loff_t to)

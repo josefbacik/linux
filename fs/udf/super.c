@@ -211,6 +211,7 @@ static const struct super_operations udf_sb_ops = {
 	.free_inode	= udf_free_in_core_inode,
 	.write_inode	= udf_write_inode,
 	.evict_inode	= udf_evict_inode,
+	.final_unlink	= udf_final_unlink,
 	.put_super	= udf_put_super,
 	.sync_fs	= udf_sync_fs,
 	.statfs		= udf_statfs,
