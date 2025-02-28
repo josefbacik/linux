@@ -496,6 +496,7 @@ static const struct super_operations hpfs_sops =
 	.alloc_inode	= hpfs_alloc_inode,
 	.free_inode	= hpfs_free_inode,
 	.evict_inode	= hpfs_evict_inode,
+	.final_unlink	= hpfs_final_unlink,
 	.put_super	= hpfs_put_super,
 	.statfs		= hpfs_statfs,
 	.show_options	= hpfs_show_options,

@@ -283,6 +283,7 @@ void hpfs_write_inode_nolock(struct inode *);
 int hpfs_setattr(struct mnt_idmap *, struct dentry *, struct iattr *);
 void hpfs_write_if_changed(struct inode *);
 void hpfs_evict_inode(struct inode *);
+void hpfs_final_unlink(struct inode *inode);
 
 /* map.c */
 

@@ -306,13 +306,17 @@ void hpfs_write_if_changed(struct inode *inode)
 		hpfs_write_inode(inode);
 }
 
+void hpfs_final_unlink(struct inode *inode)
+{
+	if (inode->i_nlink)
+		return;
+	hpfs_lock(inode->i_sb);
+	hpfs_remove_fnode(inode->i_sb, inode->i_ino);
+	hpfs_unlock(inode->i_sb);
+}
+
 void hpfs_evict_inode(struct inode *inode)
 {
 	truncate_inode_pages_final(&inode->i_data);
 	clear_inode(inode);
-	if (!inode->i_nlink) {
-		hpfs_lock(inode->i_sb);
-		hpfs_remove_fnode(inode->i_sb, inode->i_ino);
-		hpfs_unlock(inode->i_sb);
-	}
 }
