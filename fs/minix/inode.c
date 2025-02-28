@@ -26,13 +26,17 @@ static int minix_write_inode(struct inode *inode,
 		struct writeback_control *wbc);
 static int minix_statfs(struct dentry *dentry, struct kstatfs *buf);
 
+static void minix_final_unlink(struct inode *inode)
+{
+	if (inode->i_nlink)
+		return;
+	inode->i_size = 0;
+	minix_truncate(inode);
+}
+
 static void minix_evict_inode(struct inode *inode)
 {
 	truncate_inode_pages_final(&inode->i_data);
-	if (!inode->i_nlink) {
-		inode->i_size = 0;
-		minix_truncate(inode);
-	}
 	invalidate_inode_buffers(inode);
 	clear_inode(inode);
 	if (!inode->i_nlink)
@@ -109,6 +113,7 @@ static const struct super_operations minix_sops = {
 	.free_inode	= minix_free_in_core_inode,
 	.write_inode	= minix_write_inode,
 	.evict_inode	= minix_evict_inode,
+	.final_unlink	= minix_final_unlink,
 	.put_super	= minix_put_super,
 	.statfs		= minix_statfs,
 };
