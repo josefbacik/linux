@@ -1457,8 +1457,8 @@ static int evict_linked_inode(struct inode *inode)
 }
 
 /**
- * gfs2_evict_inode - Remove an inode from cache
- * @inode: The inode to evict
+ * gfs2_final_unlink - Remove an inode from the filesystem
+ * @inode: The inode to remove
  *
  * There are three cases to consider:
  * 1. i_nlink == 0, we are final opener (and must deallocate)
@@ -1476,8 +1476,7 @@ static int evict_linked_inode(struct inode *inode)
  * conversion on the iopen lock, but we can change that later. This
  * is safe, just less efficient.
  */
-
-static void gfs2_evict_inode(struct inode *inode)
+static void gfs2_final_unlink(struct inode *inode)
 {
 	struct super_block *sb = inode->i_sb;
 	struct gfs2_sbd *sdp = sb->s_fs_info;
@@ -1488,7 +1487,7 @@ static void gfs2_evict_inode(struct inode *inode)
 
 	gfs2_holder_mark_uninitialized(&gh);
 	if (inode->i_nlink || sb_rdonly(sb) || !ip->i_no_addr)
-		goto out;
+		return;
 
 	/*
 	 * In case of an incomplete mount, gfs2_evict_inode() may be called for
@@ -1496,7 +1495,7 @@ static void gfs2_evict_inode(struct inode *inode)
 	 * case, skip the filesystem evict.
 	 */
 	if (!sdp->sd_jdesc)
-		goto out;
+		return;
 
 	behavior = evict_should_delete(inode, &gh);
 	if (behavior == EVICT_SHOULD_DEFER_DELETE &&
@@ -1524,6 +1523,14 @@ static void gfs2_evict_inode(struct inode *inode)
 out:
 	if (gfs2_holder_initialized(&gh))
 		gfs2_glock_dq_uninit(&gh);
+}
+
+static void gfs2_evict_inode(struct inode *inode)
+{
+	struct super_block *sb = inode->i_sb;
+	struct gfs2_sbd *sdp = sb->s_fs_info;
+	struct gfs2_inode *ip = GFS2_I(inode);
+
 	truncate_inode_pages_final(&inode->i_data);
 	if (ip->i_qadata)
 		gfs2_assert_warn(sdp, ip->i_qadata->qa_ref == 0);
@@ -1607,6 +1614,7 @@ const struct super_operations gfs2_super_ops = {
 	.write_inode		= gfs2_write_inode,
 	.dirty_inode		= gfs2_dirty_inode,
 	.evict_inode		= gfs2_evict_inode,
+	.final_unlink		= gfs2_final_unlink,
 	.put_super		= gfs2_put_super,
 	.sync_fs		= gfs2_sync_fs,
 	.freeze_super		= gfs2_freeze_super,
