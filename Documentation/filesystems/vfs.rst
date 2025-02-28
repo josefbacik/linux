@@ -258,6 +258,7 @@ filesystem.  The following members are defined:
 		int (*write_inode) (struct inode *, struct writeback_control *wbc);
 		int (*drop_inode) (struct inode *);
 		void (*evict_inode) (struct inode *);
+                void (*final_unlink) (struct inode *);
 		void (*put_super) (struct super_block *);
 		int (*sync_fs)(struct super_block *sb, int wait);
 		int (*freeze_super) (struct super_block *sb,
@@ -341,6 +342,12 @@ or bottom half).
 	the method has to use truncate_inode_pages_final() to get rid
 	of those. Caller makes sure async writeback cannot be running for
 	the inode while (or after) ->evict_inode() is called. Optional.
+
+``final_unlink``
+        called when the last link to an inode was removed and there are no more
+        active users of the inode.  At this point inode->i_nlink is assumed to
+        be zero, and the file system may remove the inode from the file system.
+        Optional.
 
 ``put_super``
 	called when the VFS wishes to free the superblock

@@ -802,6 +802,9 @@ static void evict(struct inode *inode)
 	inode_wait_for_writeback(inode);
 	spin_unlock(&inode->i_lock);
 
+	if (op->final_unlink)
+		op->final_unlink(inode);
+
 	if (op->evict_inode) {
 		op->evict_inode(inode);
 	} else {
