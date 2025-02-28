@@ -871,6 +871,7 @@ struct inode {
 #if defined(CONFIG_IMA) || defined(CONFIG_FILE_LOCKING)
 	atomic_t		i_readcount; /* struct files open RO */
 #endif
+	refcount_t		i_obj_count;
 	union {
 		const struct file_operations	*i_fop;	/* former ->i_op->default_file_ops */
 		void (*free_inode)(struct inode *);
@@ -2814,6 +2815,7 @@ extern int current_umask(void);
 
 extern void ihold(struct inode * inode);
 extern void iput(struct inode *);
+extern void iobj_put(struct inode *inode);
 int inode_update_timestamps(struct inode *inode, int flags);
 int generic_update_time(struct inode *, int);
 
@@ -3367,6 +3369,16 @@ void dump_mapping(const struct address_space *);
 static inline bool is_zero_ino(ino_t ino)
 {
 	return (u32)ino == 0;
+}
+
+static inline void iobj_get(struct inode *inode)
+{
+	refcount_inc(&inode->i_obj_count);
+}
+
+static inline unsigned int iobj_count_read(const struct inode *inode)
+{
+	return refcount_read(&inode->i_obj_count);
 }
 
 /*
