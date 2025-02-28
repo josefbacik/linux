@@ -179,15 +179,8 @@ int omfs_sync_inode(struct inode *inode)
 	return __omfs_write_inode(inode, 1);
 }
 
-/*
- * called when an entry is deleted, need to clear the bits in the
- * bitmaps.
- */
-static void omfs_evict_inode(struct inode *inode)
+static void omfs_final_unlink(struct inode *inode)
 {
-	truncate_inode_pages_final(&inode->i_data);
-	clear_inode(inode);
-
 	if (inode->i_nlink)
 		return;
 
@@ -197,6 +190,16 @@ static void omfs_evict_inode(struct inode *inode)
 	}
 
 	omfs_clear_range(inode->i_sb, inode->i_ino, 2);
+}
+
+/*
+ * called when an entry is deleted, need to clear the bits in the
+ * bitmaps.
+ */
+static void omfs_evict_inode(struct inode *inode)
+{
+	truncate_inode_pages_final(&inode->i_data);
+	clear_inode(inode);
 }
 
 struct inode *omfs_iget(struct super_block *sb, ino_t ino)
@@ -318,6 +321,7 @@ static int omfs_show_options(struct seq_file *m, struct dentry *root)
 static const struct super_operations omfs_sops = {
 	.write_inode	= omfs_write_inode,
 	.evict_inode	= omfs_evict_inode,
+	.final_unlink	= omfs_final_unlink,
 	.put_super	= omfs_put_super,
 	.statfs		= omfs_statfs,
 	.show_options	= omfs_show_options,
