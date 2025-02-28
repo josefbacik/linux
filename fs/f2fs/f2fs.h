@@ -3534,6 +3534,7 @@ void f2fs_update_inode(struct inode *inode, struct page *node_page);
 void f2fs_update_inode_page(struct inode *inode);
 int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc);
 void f2fs_evict_inode(struct inode *inode);
+void f2fs_final_unlink(struct inode *inode);
 void f2fs_handle_failed_inode(struct inode *inode);
 
 /*

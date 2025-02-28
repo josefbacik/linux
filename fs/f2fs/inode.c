@@ -804,46 +804,14 @@ int f2fs_write_inode(struct inode *inode, struct writeback_control *wbc)
 	return 0;
 }
 
-/*
- * Called at the last iput() if i_nlink is zero
- */
-void f2fs_evict_inode(struct inode *inode)
+void f2fs_final_unlink(struct inode *inode)
 {
 	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
-	struct f2fs_inode_info *fi = F2FS_I(inode);
-	nid_t xnid = fi->i_xattr_nid;
 	int err = 0;
 	bool freeze_protected = false;
 
-	f2fs_abort_atomic_write(inode, true);
-
-	if (fi->cow_inode && f2fs_is_cow_file(fi->cow_inode)) {
-		clear_inode_flag(fi->cow_inode, FI_COW_FILE);
-		F2FS_I(fi->cow_inode)->atomic_inode = NULL;
-		iput(fi->cow_inode);
-		fi->cow_inode = NULL;
-	}
-
-	trace_f2fs_evict_inode(inode);
-	truncate_inode_pages_final(&inode->i_data);
-
-	if ((inode->i_nlink || is_bad_inode(inode)) &&
-		test_opt(sbi, COMPRESS_CACHE) && f2fs_compressed_file(inode))
-		f2fs_invalidate_compress_pages(sbi, inode->i_ino);
-
-	if (inode->i_ino == F2FS_NODE_INO(sbi) ||
-			inode->i_ino == F2FS_META_INO(sbi) ||
-			inode->i_ino == F2FS_COMPRESS_INO(sbi))
-		goto out_clear;
-
-	f2fs_bug_on(sbi, get_dirty_pages(inode));
-	f2fs_remove_dirty_inode(inode);
-
-	if (!IS_DEVICE_ALIASING(inode))
-		f2fs_destroy_extent_tree(inode);
-
 	if (inode->i_nlink || is_bad_inode(inode))
-		goto no_delete;
+		return;
 
 	err = f2fs_dquot_initialize(inode);
 	if (err) {
@@ -906,7 +874,45 @@ retry:
 	}
 	if (freeze_protected)
 		sb_end_intwrite(inode->i_sb);
-no_delete:
+
+}
+
+/*
+ * Called at the last iput() if i_nlink is zero
+ */
+void f2fs_evict_inode(struct inode *inode)
+{
+	struct f2fs_sb_info *sbi = F2FS_I_SB(inode);
+	struct f2fs_inode_info *fi = F2FS_I(inode);
+	nid_t xnid = fi->i_xattr_nid;
+
+	f2fs_abort_atomic_write(inode, true);
+
+	if (fi->cow_inode && f2fs_is_cow_file(fi->cow_inode)) {
+		clear_inode_flag(fi->cow_inode, FI_COW_FILE);
+		F2FS_I(fi->cow_inode)->atomic_inode = NULL;
+		iput(fi->cow_inode);
+		fi->cow_inode = NULL;
+	}
+
+	trace_f2fs_evict_inode(inode);
+	truncate_inode_pages_final(&inode->i_data);
+
+	if ((inode->i_nlink || is_bad_inode(inode)) &&
+		test_opt(sbi, COMPRESS_CACHE) && f2fs_compressed_file(inode))
+		f2fs_invalidate_compress_pages(sbi, inode->i_ino);
+
+	if (inode->i_ino == F2FS_NODE_INO(sbi) ||
+			inode->i_ino == F2FS_META_INO(sbi) ||
+			inode->i_ino == F2FS_COMPRESS_INO(sbi))
+		goto out_clear;
+
+	f2fs_bug_on(sbi, get_dirty_pages(inode));
+	f2fs_remove_dirty_inode(inode);
+
+	if (!IS_DEVICE_ALIASING(inode))
+		f2fs_destroy_extent_tree(inode);
+
 	dquot_drop(inode);
 
 	stat_dec_inline_xattr(inode);

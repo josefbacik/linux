@@ -3193,6 +3193,7 @@ static const struct super_operations f2fs_sops = {
 	.get_dquots	= f2fs_get_dquots,
 #endif
 	.evict_inode	= f2fs_evict_inode,
+	.final_unlink	= f2fs_final_unlink,
 	.put_super	= f2fs_put_super,
 	.sync_fs	= f2fs_sync_fs,
 	.freeze_fs	= f2fs_freeze,
