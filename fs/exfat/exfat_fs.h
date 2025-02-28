@@ -531,6 +531,7 @@ struct inode *exfat_iget(struct super_block *sb, loff_t i_pos);
 int __exfat_write_inode(struct inode *inode, int sync);
 int exfat_write_inode(struct inode *inode, struct writeback_control *wbc);
 void exfat_evict_inode(struct inode *inode);
+void exfat_final_unlink(struct inode *inode);
 int exfat_block_truncate_page(struct inode *inode, loff_t from);
 
 /* exfat/nls.c */

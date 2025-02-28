@@ -673,17 +673,20 @@ out:
 	return inode;
 }
 
+void exfat_final_unlink(struct inode *inode)
+{
+	if (inode->i_nlink)
+		return;
+
+	i_size_write(inode, 0);
+	mutex_lock(&EXFAT_SB(inode->i_sb)->s_lock);
+	__exfat_truncate(inode);
+	mutex_unlock(&EXFAT_SB(inode->i_sb)->s_lock);
+}
+
 void exfat_evict_inode(struct inode *inode)
 {
 	truncate_inode_pages(&inode->i_data, 0);
-
-	if (!inode->i_nlink) {
-		i_size_write(inode, 0);
-		mutex_lock(&EXFAT_SB(inode->i_sb)->s_lock);
-		__exfat_truncate(inode);
-		mutex_unlock(&EXFAT_SB(inode->i_sb)->s_lock);
-	}
-
 	invalidate_inode_buffers(inode);
 	clear_inode(inode);
 	exfat_cache_inval_inode(inode);

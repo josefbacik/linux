@@ -227,6 +227,7 @@ static const struct super_operations exfat_sops = {
 	.free_inode	= exfat_free_inode,
 	.write_inode	= exfat_write_inode,
 	.evict_inode	= exfat_evict_inode,
+	.final_unlink	= exfat_final_unlink,
 	.put_super	= exfat_put_super,
 	.sync_fs	= exfat_sync_fs,
 	.statfs		= exfat_statfs,
