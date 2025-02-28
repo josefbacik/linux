@@ -834,28 +834,24 @@ int ufs_sync_inode (struct inode *inode)
 	return ufs_update_inode (inode, 1);
 }
 
+void ufs_final_unlink(struct inode *inode)
+{
+	if (inode->i_nlink || is_bad_inode(inode))
+		return;
+	inode->i_size = 0;
+	if (inode->i_blocks &&
+	    (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
+	     S_ISLNK(inode->i_mode)))
+		ufs_truncate_blocks(inode);
+	ufs_update_inode(inode, inode_needs_sync(inode));
+	ufs_free_inode(inode);
+}
+
 void ufs_evict_inode(struct inode * inode)
 {
-	int want_delete = 0;
-
-	if (!inode->i_nlink && !is_bad_inode(inode))
-		want_delete = 1;
-
 	truncate_inode_pages_final(&inode->i_data);
-	if (want_delete) {
-		inode->i_size = 0;
-		if (inode->i_blocks &&
-		    (S_ISREG(inode->i_mode) || S_ISDIR(inode->i_mode) ||
-		     S_ISLNK(inode->i_mode)))
-			ufs_truncate_blocks(inode);
-		ufs_update_inode(inode, inode_needs_sync(inode));
-	}
-
 	invalidate_inode_buffers(inode);
 	clear_inode(inode);
-
-	if (want_delete)
-		ufs_free_inode(inode);
 }
 
 struct to_free {

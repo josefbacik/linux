@@ -1480,6 +1480,7 @@ static const struct super_operations ufs_super_ops = {
 	.free_inode	= ufs_free_in_core_inode,
 	.write_inode	= ufs_write_inode,
 	.evict_inode	= ufs_evict_inode,
+	.final_unlink	= ufs_final_unlink,
 	.put_super	= ufs_put_super,
 	.sync_fs	= ufs_sync_fs,
 	.statfs		= ufs_statfs,
