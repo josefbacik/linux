@@ -157,7 +157,7 @@ static int bfs_write_inode(struct inode *inode, struct writeback_control *wbc)
 	return err;
 }
 
-static void bfs_evict_inode(struct inode *inode)
+static void bfs_final_unlink(struct inode *inode)
 {
 	unsigned long ino = inode->i_ino;
 	struct bfs_inode *di;
@@ -165,12 +165,6 @@ static void bfs_evict_inode(struct inode *inode)
 	struct super_block *s = inode->i_sb;
 	struct bfs_sb_info *info = BFS_SB(s);
 	struct bfs_inode_info *bi = BFS_I(inode);
-
-	dprintf("ino=%08lx\n", ino);
-
-	truncate_inode_pages_final(&inode->i_data);
-	invalidate_inode_buffers(inode);
-	clear_inode(inode);
 
 	if (inode->i_nlink)
 		return;
@@ -201,6 +195,15 @@ static void bfs_evict_inode(struct inode *inode)
 	if (info->si_lf_eblk == bi->i_eblock)
 		info->si_lf_eblk = bi->i_sblock - 1;
 	mutex_unlock(&info->bfs_lock);
+}
+
+static void bfs_evict_inode(struct inode *inode)
+{
+	dprintf("ino=%08lx\n", inode->i_ino);
+
+	truncate_inode_pages_final(&inode->i_data);
+	invalidate_inode_buffers(inode);
+	clear_inode(inode);
 }
 
 static void bfs_put_super(struct super_block *s)
@@ -281,6 +284,7 @@ static const struct super_operations bfs_sops = {
 	.free_inode	= bfs_free_inode,
 	.write_inode	= bfs_write_inode,
 	.evict_inode	= bfs_evict_inode,
+	.final_unlink	= bfs_final_unlink,
 	.put_super	= bfs_put_super,
 	.statfs		= bfs_statfs,
 };
