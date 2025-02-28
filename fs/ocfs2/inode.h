@@ -116,6 +116,7 @@ static inline struct ocfs2_caching_info *INODE_CACHE(struct inode *inode)
 }
 
 void ocfs2_evict_inode(struct inode *inode);
+void ocfs2_final_unlink(struct inode *inode);
 int ocfs2_drop_inode(struct inode *inode);
 
 /* Flags for ocfs2_iget() */

@@ -131,6 +131,7 @@ static const struct super_operations ocfs2_sops = {
 	.free_inode	= ocfs2_free_inode,
 	.drop_inode	= ocfs2_drop_inode,
 	.evict_inode	= ocfs2_evict_inode,
+	.final_unlink	= ocfs2_final_unlink,
 	.sync_fs	= ocfs2_sync_fs,
 	.put_super	= ocfs2_put_super,
 	.show_options   = ocfs2_show_options,
