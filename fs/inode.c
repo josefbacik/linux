@@ -265,6 +265,8 @@ int inode_init_always_gfp(struct super_block *sb, struct inode *inode, gfp_t gfp
 	inode->i_wb_frn_avg_time = 0;
 	inode->i_wb_frn_history = 0;
 #endif
+	/* One for ->i_nlink == 1. */
+	refcount_set(&inode->i_use_count, 1);
 
 	spin_lock_init(&inode->i_lock);
 	lockdep_set_class(&inode->i_lock, &sb->s_type->i_lock_key);
@@ -1971,6 +1973,20 @@ retry:
 	}
 }
 EXPORT_SYMBOL(iput);
+
+/**
+ *	iuse_put	- put a usage reference on an inode
+ *	@inode: inode to put
+ *
+ *	Puts a usage reference on an inode.
+ */
+void iuse_put(struct inode *inode)
+{
+	if (!inode)
+		return;
+	refcount_dec(&inode->i_use_count);
+}
+EXPORT_SYMBOL(iuse_put);
 
 #ifdef CONFIG_BLOCK
 /**
