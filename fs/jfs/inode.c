@@ -136,33 +136,36 @@ int jfs_write_inode(struct inode *inode, struct writeback_control *wbc)
 		return 0;
 }
 
+void jfs_final_unlink(struct inode *inode)
+{
+	if (inode->i_nlink || is_bad_inode(inode))
+		return;
+	dquot_initialize(inode);
+
+	if (JFS_IP(inode)->fileset == FILESYSTEM_I) {
+		struct inode *ipimap = JFS_SBI(inode->i_sb)->ipimap;
+		truncate_inode_pages_final(&inode->i_data);
+
+		if (test_cflag(COMMIT_Freewmap, inode))
+			jfs_free_zero_link(inode);
+
+		if (ipimap && JFS_IP(ipimap)->i_imap)
+			diFree(inode);
+
+		/*
+		 * Free the inode from the quota allocation.
+		 */
+		dquot_free_inode(inode);
+	}
+}
+
 void jfs_evict_inode(struct inode *inode)
 {
 	struct jfs_inode_info *ji = JFS_IP(inode);
 
 	jfs_info("In jfs_evict_inode, inode = 0x%p", inode);
 
-	if (!inode->i_nlink && !is_bad_inode(inode)) {
-		dquot_initialize(inode);
-
-		if (JFS_IP(inode)->fileset == FILESYSTEM_I) {
-			struct inode *ipimap = JFS_SBI(inode->i_sb)->ipimap;
-			truncate_inode_pages_final(&inode->i_data);
-
-			if (test_cflag(COMMIT_Freewmap, inode))
-				jfs_free_zero_link(inode);
-
-			if (ipimap && JFS_IP(ipimap)->i_imap)
-				diFree(inode);
-
-			/*
-			 * Free the inode from the quota allocation.
-			 */
-			dquot_free_inode(inode);
-		}
-	} else {
-		truncate_inode_pages_final(&inode->i_data);
-	}
+	truncate_inode_pages_final(&inode->i_data);
 	clear_inode(inode);
 	dquot_drop(inode);
 

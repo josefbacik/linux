@@ -846,6 +846,7 @@ static const struct super_operations jfs_super_operations = {
 	.dirty_inode	= jfs_dirty_inode,
 	.write_inode	= jfs_write_inode,
 	.evict_inode	= jfs_evict_inode,
+	.final_unlink	= jfs_final_unlink,
 	.put_super	= jfs_put_super,
 	.sync_fs	= jfs_sync_fs,
 	.freeze_fs	= jfs_freeze,
