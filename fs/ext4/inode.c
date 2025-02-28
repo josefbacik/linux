@@ -163,10 +163,7 @@ int ext4_inode_is_fast_symlink(struct inode *inode)
 	       (inode->i_size < EXT4_N_BLOCKS * 4);
 }
 
-/*
- * Called at the last iput() if i_nlink is zero.
- */
-void ext4_evict_inode(struct inode *inode)
+void ext4_final_unlink(struct inode *inode)
 {
 	handle_t *handle;
 	int err;
@@ -179,18 +176,9 @@ void ext4_evict_inode(struct inode *inode)
 	struct ext4_xattr_inode_array *ea_inode_array = NULL;
 	bool freeze_protected = false;
 
-	trace_ext4_evict_inode(inode);
+	if (inode->i_nlink || is_bad_inode(inode))
+		return;
 
-	if (EXT4_I(inode)->i_flags & EXT4_EA_INODE_FL)
-		ext4_evict_ea_inode(inode);
-	if (inode->i_nlink) {
-		truncate_inode_pages_final(&inode->i_data);
-
-		goto no_delete;
-	}
-
-	if (is_bad_inode(inode))
-		goto no_delete;
 	dquot_initialize(inode);
 
 	if (ext4_should_order_data(inode))
@@ -237,7 +225,7 @@ void ext4_evict_inode(struct inode *inode)
 		ext4_orphan_del(NULL, inode);
 		if (freeze_protected)
 			sb_end_intwrite(inode->i_sb);
-		goto no_delete;
+		return;
 	}
 
 	if (IS_SYNC(inode))
@@ -280,7 +268,7 @@ stop_handle:
 		if (freeze_protected)
 			sb_end_intwrite(inode->i_sb);
 		ext4_xattr_inode_array_free(ea_inode_array);
-		goto no_delete;
+		return;
 	}
 
 	/*
@@ -310,8 +298,19 @@ stop_handle:
 	if (freeze_protected)
 		sb_end_intwrite(inode->i_sb);
 	ext4_xattr_inode_array_free(ea_inode_array);
-	return;
-no_delete:
+}
+
+/*
+ * Called at the last iput() if i_nlink is zero.
+ */
+void ext4_evict_inode(struct inode *inode)
+{
+	trace_ext4_evict_inode(inode);
+
+	if (EXT4_I(inode)->i_flags & EXT4_EA_INODE_FL)
+		ext4_evict_ea_inode(inode);
+	truncate_inode_pages_final(&inode->i_data);
+
 	/*
 	 * Check out some where else accidentally dirty the evicting inode,
 	 * which may probably cause inode use-after-free issues later.

@@ -2989,6 +2989,7 @@ extern u32  ext4_dio_alignment(struct inode *inode);
 extern int  ext4_getattr(struct mnt_idmap *, const struct path *,
 			 struct kstat *, u32, unsigned int);
 extern void ext4_evict_inode(struct inode *);
+extern void ext4_final_unlink(struct inode *inode);
 extern void ext4_clear_inode(struct inode *);
 extern int  ext4_file_getattr(struct mnt_idmap *, const struct path *,
 			      struct kstat *, u32, unsigned int);
