@@ -236,7 +236,7 @@ int inode_init_always_gfp(struct super_block *sb, struct inode *inode, gfp_t gfp
 	inode->i_state = 0;
 	atomic64_set(&inode->i_sequence, 0);
 	refcount_set(&inode->i_obj_count, 1);
-	atomic_set(&inode->i_count, 1);
+	refcount_set(&inode->i_count, 1);
 	inode->i_op = &empty_iops;
 	inode->i_fop = &no_open_fops;
 	inode->i_ino = 0;
@@ -597,7 +597,8 @@ static void init_once(void *foo)
  */
 void ihold(struct inode *inode)
 {
-	WARN_ON(atomic_inc_return(&inode->i_count) < 2);
+	refcount_inc(&inode->i_count);
+	WARN_ON(icount_read(inode) < 2);
 }
 EXPORT_SYMBOL(ihold);
 
@@ -2069,9 +2070,9 @@ retry:
 	 * equal to one, then two CPUs racing to further drop it can both
 	 * conclude it's fine.
 	 */
-	VFS_BUG_ON_INODE(atomic_read(&inode->i_count) < 1, inode);
+	VFS_BUG_ON_INODE(refcount_read(&inode->i_count) < 1, inode);
 
-	if (atomic_add_unless(&inode->i_count, -1, 1))
+	if (refcount_dec_not_one(&inode->i_count))
 		return;
 
 	/* We hold a full ref on the inode for LRU lists, so we could have the
@@ -2100,7 +2101,7 @@ retry:
 	 */
 	drop = maybe_add_lru(inode, skip_lru);
 
-	if (!atomic_dec_and_test(&inode->i_count)) {
+	if (!refcount_dec_and_test(&inode->i_count)) {
 		spin_unlock(&inode->i_lock);
 		return;
 	}

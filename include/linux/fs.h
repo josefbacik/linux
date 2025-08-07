@@ -875,7 +875,7 @@ struct inode {
 	};
 	atomic64_t		i_version;
 	atomic64_t		i_sequence; /* see futex */
-	atomic_t		i_count;
+	refcount_t		i_count;
 	atomic_t		i_dio_count;
 	atomic_t		i_writecount;
 #if defined(CONFIG_IMA) || defined(CONFIG_FILE_LOCKING)
@@ -2630,7 +2630,7 @@ static inline void mark_inode_dirty_sync(struct inode *inode)
 
 static inline int icount_read(const struct inode *inode)
 {
-	return atomic_read(&inode->i_count);
+	return refcount_read(&inode->i_count);
 }
 
 /*
@@ -3405,7 +3405,7 @@ static inline unsigned int iobj_count_read(const struct inode *inode)
  */
 static inline void __iget(struct inode *inode)
 {
-	atomic_inc(&inode->i_count);
+	refcount_inc(&inode->i_count);
 }
 
 extern void iget_failed(struct inode *);
