@@ -649,8 +649,6 @@ static void __inode_add_lru(struct inode *inode, bool rotate)
 
 	lockdep_assert_held(&inode->i_lock);
 
-	if (inode->i_state & (I_FREEING | I_WILL_FREE))
-		return;
 	if (icount_read(inode) != 1)
 		return;
 	if (inode->__i_nlink == 0)
