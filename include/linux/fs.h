@@ -3400,6 +3400,34 @@ static inline unsigned int iobj_count_read(const struct inode *inode)
 	return refcount_read(&inode->i_obj_count);
 }
 
+static inline struct inode *inode_tryget(struct inode *inode)
+{
+	/*
+	 * We are using inode_tryget() because we're interested in getting a
+	 * live reference to the inode, which is ->i_count. If we have a live
+	 * i_count then we have an i_obj_count as well, as we hold an
+	 * i_obj_count reference while i_count is non-zero.
+	 *
+	 * In the lockless case we can have both i_count and i_obj_count 0, but
+	 * this must be called under rcu_read_lock() so we know the inode
+	 * pointer is safe to access.
+	 *
+	 * If we call this without rcu_read_lock() then we must be holding an
+	 * i_obj_count reference already to make sure the inode doesn't go away.
+	 */
+	VFS_WARN_ON_ONCE(!iobj_count_read(inode) && !rcu_read_lock_held());
+
+	if (refcount_inc_not_zero(&inode->i_count))
+		return inode;
+
+	/*
+	 * If we failed to increment the reference count, then the
+	 * inode is being freed or has been freed.  We return NULL
+	 * in this case.
+	 */
+	return NULL;
+}
+
 /*
  * inode->i_lock must be held
  */
