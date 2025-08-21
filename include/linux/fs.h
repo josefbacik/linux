@@ -672,8 +672,8 @@ is_uncached_acl(struct posix_acl *acl)
  * I_DIRTY_DATASYNC, I_DIRTY_PAGES, and I_DIRTY_TIME.
  *
  * Four bits define the lifetime of an inode.  Initially, inodes are I_NEW,
- * until that flag is cleared.  I_WILL_FREE, I_FREEING and I_CLEAR are set at
- * various stages of removing an inode.
+ * until that flag is cleared.  I_CLEAR is set when the inode is clean and ready
+ * to be freed.
  *
  * Two bits are used for locking and completion notification, I_NEW and I_SYNC.
  *
@@ -697,24 +697,18 @@ is_uncached_acl(struct posix_acl *acl)
  *			New inodes set I_NEW.  If two processes both create
  *			the same inode, one of them will release its inode and
  *			wait for I_NEW to be released before returning.
- *			Inodes in I_WILL_FREE, I_FREEING or I_CLEAR state can
- *			also cause waiting on I_NEW, without I_NEW actually
- *			being set.  find_inode() uses this to prevent returning
+ *			Inodes with an i_count == 0 or I_CLEAR state can also
+ *			cause waiting on I_NEW, without I_NEW actually being
+ *			set.  find_inode() uses this to prevent returning
  *			nearly-dead inodes.
- * I_WILL_FREE		Must be set when calling write_inode_now() if i_count
- *			is zero.  I_FREEING must be set when I_WILL_FREE is
- *			cleared.
- * I_FREEING		Set when inode is about to be freed but still has dirty
- *			pages or buffers attached or the inode itself is still
- *			dirty.
  * I_CLEAR		Added by clear_inode().  In this state the inode is
- *			clean and can be destroyed.  Inode keeps I_FREEING.
+ *			clean and can be destroyed.
  *
- *			Inodes that are I_WILL_FREE, I_FREEING or I_CLEAR are
- *			prohibited for many purposes.  iget() must wait for
- *			the inode to be completely released, then create it
- *			anew.  Other functions will just ignore such inodes,
- *			if appropriate.  I_NEW is used for waiting.
+ *			Inodes that have i_count == 0 or I_CLEAR are prohibited
+ *			for many purposes.  iget() must wait for the inode to be
+ *			completely released, then create it anew.  Other
+ *			functions will just ignore such inodes, if appropriate.
+ *			I_NEW is used for waiting.
  *
  * I_SYNC		Writeback of inode is running. The bit is set during
  *			data writeback, and cleared with a wakeup on the bit
@@ -752,8 +746,6 @@ is_uncached_acl(struct posix_acl *acl)
  * I_CACHED_LRU		Inode is cached because it is dirty or isn't shrinkable,
  *			and thus is on the s_cached_inode_lru list.
  *
- * Q: What is the difference between I_WILL_FREE and I_FREEING?
- *
  * __I_{SYNC,NEW,LRU_ISOLATING} are used to derive unique addresses to wait
  * upon. There's one free address left.
  */
@@ -771,20 +763,18 @@ enum inode_state_flags_t {
 	I_DIRTY_SYNC		= (1U << 3),
 	I_DIRTY_DATASYNC	= (1U << 4),
 	I_DIRTY_PAGES		= (1U << 5),
-	I_WILL_FREE		= (1U << 6),
-	I_FREEING		= (1U << 7),
-	I_CLEAR			= (1U << 8),
-	I_REFERENCED		= (1U << 9),
-	I_LINKABLE		= (1U << 10),
-	I_DIRTY_TIME		= (1U << 11),
-	I_WB_SWITCH		= (1U << 12),
-	I_OVL_INUSE		= (1U << 13),
-	I_CREATING		= (1U << 14),
-	I_DONTCACHE		= (1U << 15),
-	I_SYNC_QUEUED		= (1U << 16),
-	I_PINNING_NETFS_WB	= (1U << 17),
-	I_LRU			= (1U << 18),
-	I_CACHED_LRU		= (1U << 19)
+	I_CLEAR			= (1U << 6),
+	I_REFERENCED		= (1U << 7),
+	I_LINKABLE		= (1U << 8),
+	I_DIRTY_TIME		= (1U << 9),
+	I_WB_SWITCH		= (1U << 10),
+	I_OVL_INUSE		= (1U << 11),
+	I_CREATING		= (1U << 12),
+	I_DONTCACHE		= (1U << 13),
+	I_SYNC_QUEUED		= (1U << 14),
+	I_PINNING_NETFS_WB	= (1U << 15),
+	I_LRU			= (1U << 16),
+	I_CACHED_LRU		= (1U << 17)
 };
 
 #define I_DIRTY_INODE (I_DIRTY_SYNC | I_DIRTY_DATASYNC)

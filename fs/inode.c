@@ -914,7 +914,7 @@ void clear_inode(struct inode *inode)
 	BUG_ON(inode->i_state & I_CLEAR);
 	BUG_ON(!list_empty(&inode->i_wb_list));
 	/* don't need i_lock here, no concurrent mods to i_state */
-	inode->i_state = I_FREEING | I_CLEAR;
+	inode->i_state = I_CLEAR;
 }
 EXPORT_SYMBOL(clear_inode);
 
@@ -978,7 +978,7 @@ static void evict(struct inode *inode)
 	 * This also means we don't need any fences for the call below.
 	 */
 	inode_wake_up_bit(inode, __I_NEW);
-	BUG_ON(inode->i_state != (I_FREEING | I_CLEAR));
+	BUG_ON(inode->i_state != I_CLEAR);
 }
 
 static void iput_evict(struct inode *inode);
@@ -2011,7 +2011,6 @@ static void iput_final(struct inode *inode, bool drop)
 
 	state = inode->i_state;
 	if (!drop) {
-		WRITE_ONCE(inode->i_state, state | I_WILL_FREE);
 		spin_unlock(&inode->i_lock);
 
 		write_inode_now(inode, 1);
@@ -2019,10 +2018,7 @@ static void iput_final(struct inode *inode, bool drop)
 		spin_lock(&inode->i_lock);
 		state = inode->i_state;
 		WARN_ON(state & I_NEW);
-		state &= ~I_WILL_FREE;
 	}
-
-	WRITE_ONCE(inode->i_state, state | I_FREEING);
 	spin_unlock(&inode->i_lock);
 
 	evict(inode);
