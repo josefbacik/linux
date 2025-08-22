@@ -643,7 +643,12 @@ static bool inode_del_cached_lru(struct inode *inode)
 	return false;
 }
 
-static void __inode_add_lru(struct inode *inode, bool rotate)
+/*
+ * Add inode to LRU if needed (inode is unused and clean).
+ *
+ * Needs inode->i_lock held.
+ */
+void inode_add_lru(struct inode *inode)
 {
 	bool need_ref = true;
 
@@ -666,8 +671,6 @@ static void __inode_add_lru(struct inode *inode, bool rotate)
 		if (need_ref)
 			__iget(inode);
 		this_cpu_inc(nr_unused);
-	} else if (rotate) {
-		inode->i_state |= I_REFERENCED;
 	}
 }
 
@@ -681,16 +684,6 @@ struct wait_queue_head *inode_bit_waitqueue(struct wait_bit_queue_entry *wqe,
         return __var_waitqueue(bit_address);
 }
 EXPORT_SYMBOL(inode_bit_waitqueue);
-
-/*
- * Add inode to LRU if needed (inode is unused and clean).
- *
- * Needs inode->i_lock held.
- */
-void inode_add_lru(struct inode *inode)
-{
-	__inode_add_lru(inode, false);
-}
 
 /*
  * Caller must be holding it's own i_count reference on this inode in order to
@@ -1053,14 +1046,6 @@ EXPORT_SYMBOL_GPL(evict_inodes);
 
 /*
  * Isolate the inode from the LRU in preparation for freeing it.
- *
- * If the inode has the I_REFERENCED flag set, then it means that it has been
- * used recently - the flag is set in iput_final(). When we encounter such an
- * inode, clear the flag and move it to the back of the LRU so it gets another
- * pass through the LRU before it gets reclaimed. This is necessary because of
- * the fact we are doing lazy LRU updates to minimise lock contention so the
- * LRU does not have strict ordering. Hence we don't want to reclaim inodes
- * with this flag set because they are the inodes that are out of order.
  */
 static enum lru_status inode_lru_isolate(struct list_head *item,
 		struct list_lru_one *lru, void *arg)
@@ -1089,13 +1074,6 @@ static enum lru_status inode_lru_isolate(struct list_head *item,
 		spin_unlock(&inode->i_lock);
 		this_cpu_dec(nr_unused);
 		return LRU_REMOVED;
-	}
-
-	/* Recently referenced inodes get one more pass */
-	if (inode->i_state & I_REFERENCED) {
-		inode->i_state &= ~I_REFERENCED;
-		spin_unlock(&inode->i_lock);
-		return LRU_ROTATE;
 	}
 
 	/*
@@ -2047,7 +2025,7 @@ static bool maybe_add_lru(struct inode *inode, bool skip_lru)
 	if (!(sb->s_flags & SB_ACTIVE))
 		return drop;
 
-	__inode_add_lru(inode, true);
+	inode_add_lru(inode);
 	return drop;
 }
 

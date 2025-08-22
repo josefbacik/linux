@@ -715,7 +715,6 @@ is_uncached_acl(struct posix_acl *acl)
  *			address once it is done. The bit is also used to pin
  *			the inode in memory for flusher thread.
  *
- * I_REFERENCED		Marks the inode as recently references on the LRU list.
  *
  * I_WB_SWITCH		Cgroup bdi_writeback switching in progress.  Used to
  *			synchronize competing switching instances and to tell
@@ -764,17 +763,16 @@ enum inode_state_flags_t {
 	I_DIRTY_DATASYNC	= (1U << 4),
 	I_DIRTY_PAGES		= (1U << 5),
 	I_CLEAR			= (1U << 6),
-	I_REFERENCED		= (1U << 7),
-	I_LINKABLE		= (1U << 8),
-	I_DIRTY_TIME		= (1U << 9),
-	I_WB_SWITCH		= (1U << 10),
-	I_OVL_INUSE		= (1U << 11),
-	I_CREATING		= (1U << 12),
-	I_DONTCACHE		= (1U << 13),
-	I_SYNC_QUEUED		= (1U << 14),
-	I_PINNING_NETFS_WB	= (1U << 15),
-	I_LRU			= (1U << 16),
-	I_CACHED_LRU		= (1U << 17)
+	I_LINKABLE		= (1U << 7),
+	I_DIRTY_TIME		= (1U << 8),
+	I_WB_SWITCH		= (1U << 9),
+	I_OVL_INUSE		= (1U << 10),
+	I_CREATING		= (1U << 11),
+	I_DONTCACHE		= (1U << 12),
+	I_SYNC_QUEUED		= (1U << 13),
+	I_PINNING_NETFS_WB	= (1U << 14),
+	I_LRU			= (1U << 15),
+	I_CACHED_LRU		= (1U << 16)
 };
 
 #define I_DIRTY_INODE (I_DIRTY_SYNC | I_DIRTY_DATASYNC)
