@@ -708,49 +708,6 @@ void inode_lru_list_del(struct inode *inode)
 	}
 }
 
-static void inode_pin_lru_isolating(struct inode *inode)
-{
-	lockdep_assert_held(&inode->i_lock);
-	WARN_ON(inode->i_state & I_LRU_ISOLATING);
-	inode->i_state |= I_LRU_ISOLATING;
-}
-
-static void inode_unpin_lru_isolating(struct inode *inode)
-{
-	spin_lock(&inode->i_lock);
-	WARN_ON(!(inode->i_state & I_LRU_ISOLATING));
-	inode->i_state &= ~I_LRU_ISOLATING;
-	/* Called with inode->i_lock which ensures memory ordering. */
-	inode_wake_up_bit(inode, __I_LRU_ISOLATING);
-	spin_unlock(&inode->i_lock);
-}
-
-static void inode_wait_for_lru_isolating(struct inode *inode)
-{
-	struct wait_bit_queue_entry wqe;
-	struct wait_queue_head *wq_head;
-
-	lockdep_assert_held(&inode->i_lock);
-	if (!(inode->i_state & I_LRU_ISOLATING))
-		return;
-
-	wq_head = inode_bit_waitqueue(&wqe, inode, __I_LRU_ISOLATING);
-	for (;;) {
-		prepare_to_wait_event(wq_head, &wqe.wq_entry, TASK_UNINTERRUPTIBLE);
-		/*
-		 * Checking I_LRU_ISOLATING with inode->i_lock guarantees
-		 * memory ordering.
-		 */
-		if (!(inode->i_state & I_LRU_ISOLATING))
-			break;
-		spin_unlock(&inode->i_lock);
-		schedule();
-		spin_lock(&inode->i_lock);
-	}
-	finish_wait(wq_head, &wqe.wq_entry);
-	WARN_ON(inode->i_state & I_LRU_ISOLATING);
-}
-
 /**
  * inode_sb_list_add - add inode to the superblock list of inodes
  * @inode: inode to add
@@ -937,7 +894,6 @@ static void evict(struct inode *inode)
 	inode_sb_list_del(inode);
 
 	spin_lock(&inode->i_lock);
-	inode_wait_for_lru_isolating(inode);
 
 	/*
 	 * Wait for flusher thread to be done with the inode so that filesystem
@@ -1082,7 +1038,6 @@ static enum lru_status inode_lru_isolate(struct list_head *item,
 	 * be under pressure before the cache inside the highmem zone.
 	 */
 	if (inode_has_buffers(inode) || !mapping_empty(&inode->i_data)) {
-		inode_pin_lru_isolating(inode);
 		spin_unlock(&inode->i_lock);
 		spin_unlock(&lru->lock);
 		if (remove_inode_buffers(inode)) {
@@ -1094,7 +1049,6 @@ static enum lru_status inode_lru_isolate(struct list_head *item,
 				__count_vm_events(PGINODESTEAL, reap);
 			mm_account_reclaimed_pages(reap);
 		}
-		inode_unpin_lru_isolating(inode);
 		return LRU_RETRY;
 	}
 
