@@ -432,8 +432,10 @@ void drop_nlink_locked(struct inode *inode)
 
 	WARN_ON(inode->i_nlink == 0);
 	inode->__i_nlink--;
-	if (!inode->i_nlink)
+	if (!inode->i_nlink) {
+		inode_lru_list_del(inode);
 		atomic_long_inc(&inode->i_sb->s_remove_count);
+	}
 }
 EXPORT_SYMBOL(drop_nlink_locked);
 
@@ -450,6 +452,7 @@ void clear_nlink_locked(struct inode *inode)
 
 	if (inode->i_nlink) {
 		inode->__i_nlink = 0;
+		inode_lru_list_del(inode);
 		atomic_long_inc(&inode->i_sb->s_remove_count);
 	}
 }
@@ -472,8 +475,13 @@ void drop_nlink(struct inode *inode)
 
 	WARN_ON(inode->i_nlink == 0);
 	inode->__i_nlink--;
-	if (!inode->i_nlink)
+	if (!inode->i_nlink) {
+		spin_lock(&inode->i_lock);
+		inode_lru_list_del(inode);
+		spin_unlock(&inode->i_lock);
+
 		atomic_long_inc(&inode->i_sb->s_remove_count);
+	}
 }
 EXPORT_SYMBOL(drop_nlink);
 
@@ -491,6 +499,11 @@ void clear_nlink(struct inode *inode)
 
 	if (inode->i_nlink) {
 		inode->__i_nlink = 0;
+
+		spin_lock(&inode->i_lock);
+		inode_lru_list_del(inode);
+		spin_unlock(&inode->i_lock);
+
 		atomic_long_inc(&inode->i_sb->s_remove_count);
 	}
 }
