@@ -1920,7 +1920,7 @@ cifs_drop_nlink(struct inode *inode)
 {
 	spin_lock(&inode->i_lock);
 	if (inode->i_nlink > 0)
-		drop_nlink(inode);
+		drop_nlink_locked(inode);
 	spin_unlock(&inode->i_lock);
 }
 
@@ -2361,7 +2361,7 @@ int cifs_rmdir(struct inode *inode, struct dentry *direntry)
 	if (!rc) {
 		spin_lock(&d_inode(direntry)->i_lock);
 		i_size_write(d_inode(direntry), 0);
-		clear_nlink(d_inode(direntry));
+		clear_nlink_locked(d_inode(direntry));
 		spin_unlock(&d_inode(direntry)->i_lock);
 	}
 

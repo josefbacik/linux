@@ -420,6 +420,42 @@ static void destroy_inode(struct inode *inode)
 }
 
 /**
+ * drop_nlink_locked - drop an inode's link count with i_lock held
+ * @inode: inode
+ *
+ * This is equivalent to drop_nlink, except that it requires the caller to be
+ * holding the i_lock.
+ */
+void drop_nlink_locked(struct inode *inode)
+{
+	lockdep_assert_held(&inode->i_lock);
+
+	WARN_ON(inode->i_nlink == 0);
+	inode->__i_nlink--;
+	if (!inode->i_nlink)
+		atomic_long_inc(&inode->i_sb->s_remove_count);
+}
+EXPORT_SYMBOL(drop_nlink_locked);
+
+/**
+ * clear_nlink_locked - clear an inode's link count with i_lock held
+ * @inode: inode
+ *
+ * This is equivalent to clear_nlink, except that it requires the caller to be
+ * holding the i_lock.
+ */
+void clear_nlink_locked(struct inode *inode)
+{
+	lockdep_assert_held(&inode->i_lock);
+
+	if (inode->i_nlink) {
+		inode->__i_nlink = 0;
+		atomic_long_inc(&inode->i_sb->s_remove_count);
+	}
+}
+EXPORT_SYMBOL(clear_nlink_locked);
+
+/**
  * drop_nlink - directly drop an inode's link count
  * @inode: inode
  *
@@ -432,6 +468,8 @@ static void destroy_inode(struct inode *inode)
  */
 void drop_nlink(struct inode *inode)
 {
+	lockdep_assert_not_held(&inode->i_lock);
+
 	WARN_ON(inode->i_nlink == 0);
 	inode->__i_nlink--;
 	if (!inode->i_nlink)
@@ -449,6 +487,8 @@ EXPORT_SYMBOL(drop_nlink);
  */
 void clear_nlink(struct inode *inode)
 {
+	lockdep_assert_not_held(&inode->i_lock);
+
 	if (inode->i_nlink) {
 		inode->__i_nlink = 0;
 		atomic_long_inc(&inode->i_sb->s_remove_count);

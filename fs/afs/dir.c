@@ -1907,9 +1907,9 @@ static void afs_rename_edit_dir(struct afs_operation *op)
 	if (new_inode) {
 		spin_lock(&new_inode->i_lock);
 		if (S_ISDIR(new_inode->i_mode))
-			clear_nlink(new_inode);
+			clear_nlink_locked(new_inode);
 		else if (new_inode->i_nlink > 0)
-			drop_nlink(new_inode);
+			drop_nlink_locked(new_inode);
 		spin_unlock(&new_inode->i_lock);
 	}
 
