@@ -2072,7 +2072,7 @@ retry:
 	 */
 	VFS_BUG_ON_INODE(refcount_read(&inode->i_count) < 1, inode);
 
-	if (refcount_dec_not_one(&inode->i_count))
+	if (icount_dec_not_one(inode))
 		return;
 
 	/* We hold a full ref on the inode for LRU lists, so we could have the

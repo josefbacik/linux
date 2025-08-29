@@ -3408,6 +3408,11 @@ static inline void __iget(struct inode *inode)
 	refcount_inc(&inode->i_count);
 }
 
+static inline bool icount_dec_not_one(struct inode *inode)
+{
+	return refcount_dec_not_one(&inode->i_count);
+}
+
 extern void iget_failed(struct inode *);
 extern void clear_inode(struct inode *);
 extern void __destroy_inode(struct inode *);
