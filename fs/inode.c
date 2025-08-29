@@ -597,7 +597,6 @@ static void init_once(void *foo)
  */
 void ihold(struct inode *inode)
 {
-	iobj_get(inode);
 	WARN_ON(atomic_inc_return(&inode->i_count) < 2);
 }
 EXPORT_SYMBOL(ihold);
@@ -2072,10 +2071,8 @@ retry:
 	 */
 	VFS_BUG_ON_INODE(atomic_read(&inode->i_count) < 1, inode);
 
-	if (atomic_add_unless(&inode->i_count, -1, 1)) {
-		iobj_put(inode);
+	if (atomic_add_unless(&inode->i_count, -1, 1))
 		return;
-	}
 
 	/* We hold a full ref on the inode for LRU lists, so we could have the
 	 * lock held for iput() when we remove it from the LRU, but we should
@@ -2105,7 +2102,6 @@ retry:
 
 	if (!atomic_dec_and_test(&inode->i_count)) {
 		spin_unlock(&inode->i_lock);
-		iobj_put(inode);
 		return;
 	}
 
