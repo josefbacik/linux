@@ -849,7 +849,7 @@ void clear_inode(struct inode *inode)
 	 * and we must not free the mapping under it.
 	 */
 	xa_lock_irq(&inode->i_data.i_pages);
-	BUG_ON(inode->i_data.nrpages);
+	WARN_ON(inode->i_data.nrpages);
 	/*
 	 * Almost always, mapping_empty(&inode->i_data) here; but there are
 	 * two known and long-standing ways in which nodes may get left behind
@@ -859,10 +859,10 @@ void clear_inode(struct inode *inode)
 	 * nor even WARN_ON(!mapping_empty).
 	 */
 	xa_unlock_irq(&inode->i_data.i_pages);
-	BUG_ON(!list_empty(&inode->i_data.i_private_list));
-	BUG_ON(icount_read(inode) != 0);
-	BUG_ON(inode->i_state & I_CLEAR);
-	BUG_ON(!list_empty(&inode->i_wb_list));
+	WARN_ON(!list_empty(&inode->i_data.i_private_list));
+	WARN_ON(icount_read(inode) != 0);
+	WARN_ON(inode->i_state & I_CLEAR);
+	WARN_ON(!list_empty(&inode->i_wb_list));
 	/* don't need i_lock here, no concurrent mods to i_state */
 	inode->i_state = I_CLEAR;
 }
