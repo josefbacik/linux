@@ -87,6 +87,7 @@
 
 #include <linux/unaligned.h>
 #include <linux/capability.h>
+#include <linux/cell.h>
 #include <linux/errno.h>
 #include <linux/errqueue.h>
 #include <linux/types.h>
@@ -1736,20 +1737,37 @@ static int groups_to_user(sockptr_t dst, const struct group_info *src)
 	return 0;
 }
 
+/*
+ * Who the peer is, is nobody's business in another cell. The question fails
+ * rather than be answered with a nobody: 65534 is a uid like any other in a
+ * cell, and a server that lets in whoever has its own uid may well run as it.
+ *
+ * The caller holds sk_peer_lock and goes on holding it until it has read what it
+ * is going to hand out. A connect() on another thread may be waiting for that
+ * very lock to say who the peer is.
+ */
+static bool sk_peer_foreign(const struct sock *sk)
+{
+	lockdep_assert_held(&sk->sk_peer_lock);
+
+	return sk->sk_peer_cred && cred_cell(sk->sk_peer_cred) != current_cell();
+}
+
 /* Hand out a pidfd for @type of the socket's peer via SO_PEERPIDFD*. */
 static int sk_getsockopt_peerpidfd(struct sock *sk, enum pid_type type,
 				   sockptr_t optval, sockptr_t optlen, int len)
 {
 	struct file *pidfd_file = NULL;
 	unsigned int flags = 0;
-	struct pid *peer_pid;
+	struct pid *peer_pid = NULL;
 	int pidfd;
 
 	if (len > sizeof(pidfd))
 		len = sizeof(pidfd);
 
 	spin_lock(&sk->sk_peer_lock);
-	peer_pid = get_pid(sk->sk_peer_pid[type]);
+	if (!sk_peer_foreign(sk))
+		peer_pid = get_pid(sk->sk_peer_pid[type]);
 	spin_unlock(&sk->sk_peer_lock);
 
 	if (!peer_pid)
@@ -1961,13 +1979,19 @@ int sk_getsockopt(struct sock *sk, int level, int optname,
 	case SO_PEERCRED:
 	{
 		struct ucred peercred;
+		bool foreign;
+
 		if (len > sizeof(peercred))
 			len = sizeof(peercred);
 
 		spin_lock(&sk->sk_peer_lock);
-		cred_to_ucred(sk->sk_peer_pid[PIDTYPE_TGID], sk->sk_peer_cred,
-			      &peercred);
+		foreign = sk_peer_foreign(sk);
+		if (!foreign)
+			cred_to_ucred(sk->sk_peer_pid[PIDTYPE_TGID],
+				      sk->sk_peer_cred, &peercred);
 		spin_unlock(&sk->sk_peer_lock);
+		if (foreign)
+			return -ENODATA;
 
 		if (copy_to_sockptr(optval, &peercred, len))
 			return -EFAULT;
@@ -1992,6 +2016,11 @@ int sk_getsockopt(struct sock *sk, int level, int optname,
 		cred = sk_get_peer_cred(sk);
 		if (!cred)
 			return -ENODATA;
+		/* What was taken is what is looked at. */
+		if (cred_cell(cred) != current_cell()) {
+			put_cred(cred);
+			return -ENODATA;
+		}
 
 		n = cred->group_info->ngroups;
 		if (len < n * sizeof(gid_t)) {
@@ -2037,8 +2066,24 @@ int sk_getsockopt(struct sock *sk, int level, int optname,
 		break;
 
 	case SO_PEERSEC:
+	{
+		bool unknown, foreign;
+
+		spin_lock(&sk->sk_peer_lock);
+		unknown = !sk->sk_peer_cred;
+		foreign = sk_peer_foreign(sk);
+		spin_unlock(&sk->sk_peer_lock);
+		/*
+		 * The label is not under sk_peer_lock, and a connect() has the
+		 * LSM note it before it says who the peer is. So a task of a
+		 * cell gets it only once the peer is known to be of its cell.
+		 * From there on the peer of a stream socket does not change.
+		 */
+		if (foreign || (unknown && current_cell()))
+			return -ENODATA;
 		return security_socket_getpeersec_stream(sock,
 							 optval, optlen, len);
+	}
 
 	case SO_MARK:
 		v.val = READ_ONCE(sk->sk_mark);
