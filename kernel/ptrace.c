@@ -9,6 +9,7 @@
  */
 
 #include <linux/capability.h>
+#include <linux/cell.h>
 #include <linux/export.h>
 #include <linux/sched.h>
 #include <linux/sched/mm.h>
@@ -324,6 +325,9 @@ static int __ptrace_may_access(struct task_struct *task, unsigned int mode)
 	/* Don't let security modules deny introspection */
 	if (same_thread_group(task, current))
 		return 0;
+	/* It is not yet what it will be. Nobody has any business with it. */
+	if (task_is_embryo(task))
+		return -EPERM;
 	rcu_read_lock();
 	if (mode & PTRACE_MODE_FSCREDS) {
 		caller_ids = CRED_IDS_FS;
