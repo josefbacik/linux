@@ -6,6 +6,7 @@
  */
 
 #include <linux/export.h>
+#include <linux/cell.h>
 #include <linux/security.h>
 #include "internal.h"
 
@@ -49,6 +50,12 @@ int key_task_permission(const key_ref_t key_ref, const struct cred *cred,
 	}
 
 	key = key_ref_to_ptr(key_ref);
+
+	/* Across cells an equal uid, or gid, means nothing. */
+	if (key->cell_id != cred_cell_id(cred)) {
+		kperm = key->perm;
+		goto use_these_perms;
+	}
 
 	/* use the second 8-bits of permissions for keys the caller owns */
 	if (uid_eq(key->uid, cred->fsuid)) {
