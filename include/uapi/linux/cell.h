@@ -65,4 +65,13 @@ enum task_configure_cmd {
 	TASK_CMD_START		= 3,	/* Apply everything and exec */
 };
 
+/* task_configure(TASK_SET_BINARY, "cred"). Ids are the cell's own. */
+struct task_cred {
+	__u32 uid;
+	__u32 gid;
+	__u32 ngroups;
+	__u32 __spare;
+	__aligned_u64 groups;	/* pointer to @ngroups __u32 gids */
+};
+
 #endif /* _UAPI_LINUX_CELL_H */

@@ -65,6 +65,12 @@ struct embryo {
 	struct embryo_fd	fds[EMBRYO_MAX_FDS];
 	unsigned int		nr_fds;
 
+	bool			have_cred;
+	kuid_t			uid;
+	kgid_t			gid;
+	struct group_info	*groups;
+	struct user_namespace	*user_ns;	/* likewise */
+
 	int			result;
 	struct completion	start;		/* starter -> embryo */
 	struct completion	done;		/* embryo -> starter */
@@ -114,6 +120,9 @@ static void embryo_put(struct embryo *e)
 	embryo_strings_free(&e->argv);
 	embryo_strings_free(&e->envp);
 	embryo_put_fds(e);
+	if (e->groups)
+		put_group_info(e->groups);
+	put_user_ns(e->user_ns);
 	kfree_rcu(e, rcu);
 }
 
@@ -124,6 +133,52 @@ static void embryo_detach(struct embryo *e)
 	embryo_put(e);
 }
 
+static int embryo_apply_cred(struct embryo *e)
+{
+	const struct cred *old = current_cred();
+	struct user_struct *user;
+	struct cred *new;
+	int ret;
+
+	if (!e->have_cred)
+		return 0;
+
+	new = prepare_creds();
+	if (!new)
+		return -ENOMEM;
+
+	new->uid = new->euid = new->suid = new->fsuid = e->uid;
+	new->gid = new->egid = new->sgid = new->fsgid = e->gid;
+	if (e->groups)
+		set_groups(new, e->groups);
+
+	ret = -EAGAIN;
+	user = alloc_uid(e->uid);
+	if (!user)
+		goto err;
+	free_uid(new->user);
+	new->user = user;
+
+	/* Leaving uid 0 behind costs the capabilities, as setresuid() would. */
+	ret = security_task_fix_setuid(new, old, LSM_SETID_RES);
+	if (ret)
+		goto err;
+	ret = security_task_fix_setgid(new, old, LSM_SETID_RES);
+	if (ret)
+		goto err;
+	ret = security_task_fix_setgroups(new, old);
+	if (ret)
+		goto err;
+	ret = set_cred_ucounts(new);
+	if (ret)
+		goto err;
+	return commit_creds(new);
+
+err:
+	abort_creds(new);
+	return ret;
+}
+
 static int embryo_exec(struct embryo *e)
 {
 	static const char * const no_strings[] = { NULL };
@@ -131,6 +186,9 @@ static int embryo_exec(struct embryo *e)
 	int ret;
 
 	ret = embryo_install_fds(e);
+	if (ret)
+		return ret;
+	ret = embryo_apply_cred(e);
 	if (ret)
 		return ret;
 
@@ -221,6 +279,7 @@ int embryo_fork_prepare(struct kernel_clone_args *args)
 		kfree(e);
 		return ret;
 	}
+	e->user_ns = get_user_ns(cell_user_ns(args->cell));
 
 	args->embryo = e;
 	args->fn = embryo_main;
@@ -334,6 +393,60 @@ static int embryo_set_strings(struct embryo_strings *s, const void __user *ubloc
 
 	embryo_strings_free(s);
 	*s = new;
+	return 0;
+}
+
+static int embryo_set_cred(struct embryo *e, const void __user *uvalue, size_t len)
+{
+	struct group_info *groups = NULL;
+	struct task_cred tc;
+	kuid_t uid;
+	kgid_t gid;
+	u32 i;
+
+	if (len != sizeof(tc))
+		return -EINVAL;
+	if (copy_from_user(&tc, uvalue, sizeof(tc)))
+		return -EFAULT;
+	if (tc.__spare || tc.ngroups > NGROUPS_MAX)
+		return -EINVAL;
+
+	/* The ids are the cell's own. One it does not have cannot be named. */
+	uid = make_kuid(e->user_ns, tc.uid);
+	gid = make_kgid(e->user_ns, tc.gid);
+	if (!uid_valid(uid) || !gid_valid(gid))
+		return -EINVAL;
+
+	if (tc.ngroups) {
+		const u32 __user *ugroups = u64_to_user_ptr(tc.groups);
+
+		if (!userns_may_setgroups(e->user_ns))
+			return -EPERM;
+		groups = groups_alloc(tc.ngroups);
+		if (!groups)
+			return -ENOMEM;
+		for (i = 0; i < tc.ngroups; i++) {
+			u32 g;
+
+			if (get_user(g, ugroups + i)) {
+				put_group_info(groups);
+				return -EFAULT;
+			}
+			groups->gid[i] = make_kgid(e->user_ns, g);
+			if (!gid_valid(groups->gid[i])) {
+				put_group_info(groups);
+				return -EINVAL;
+			}
+		}
+		groups_sort(groups);
+	}
+
+	if (e->groups)
+		put_group_info(e->groups);
+	e->groups = groups;
+	e->uid = uid;
+	e->gid = gid;
+	e->have_cred = true;
 	return 0;
 }
 
@@ -484,6 +597,8 @@ SYSCALL_DEFINE5(task_configure, int, pidfd, unsigned int, cmd,
 			ret = embryo_set_strings(&e->argv, uvalue, aux);
 		else if (!strcmp(key, "envp"))
 			ret = embryo_set_strings(&e->envp, uvalue, aux);
+		else if (!strcmp(key, "cred"))
+			ret = embryo_set_cred(e, uvalue, aux);
 		else
 			ret = -EINVAL;
 		break;
