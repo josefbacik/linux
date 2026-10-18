@@ -16,6 +16,7 @@ struct thread_shstk {
 
 long shstk_prctl(struct task_struct *task, int option, unsigned long arg2);
 void reset_thread_features(void);
+void shstk_clear_thread(struct task_struct *p);
 unsigned long shstk_alloc_thread_stack(struct task_struct *p, u64 clone_flags,
 				       unsigned long stack_size);
 void shstk_free(struct task_struct *p);
@@ -29,6 +30,7 @@ int shstk_push(u64 val);
 static inline long shstk_prctl(struct task_struct *task, int option,
 			       unsigned long arg2) { return -EINVAL; }
 static inline void reset_thread_features(void) {}
+static inline void shstk_clear_thread(struct task_struct *p) {}
 static inline unsigned long shstk_alloc_thread_stack(struct task_struct *p,
 						     u64 clone_flags,
 						     unsigned long stack_size) { return 0; }
