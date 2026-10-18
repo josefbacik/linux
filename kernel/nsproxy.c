@@ -28,6 +28,7 @@
 #include <linux/cgroup.h>
 #include <linux/perf_event.h>
 #include <linux/nstree.h>
+#include <linux/cell.h>
 
 static struct kmem_cache *nsproxy_cachep;
 
@@ -241,6 +242,72 @@ int unshare_nsproxy_namespaces(unsigned long unshare_flags,
 out:
 	return err;
 }
+
+#ifdef CONFIG_CELLS
+/**
+ * cell_create_nsproxy - make the nsproxy every task of a cell shares
+ * @user_ns:   the user namespace of the cell
+ * @mnt_ns:    its mount namespace
+ * @pid_ns:    its pid namespace
+ * @net:       its network namespace
+ * @cgroup_ns: its cgroup namespace
+ * @hostname:  its hostname
+ *
+ * The nsproxy never changes: a task of a cell can neither unshare() nor
+ * setns(). It takes its own references. The uts and ipc namespaces are always
+ * fresh, the time namespace is the caller's.
+ *
+ * Return: the nsproxy, active and with a reference for put_nsproxy(), or an
+ * ERR_PTR().
+ */
+struct nsproxy *cell_create_nsproxy(struct user_namespace *user_ns,
+				    struct mnt_namespace *mnt_ns,
+				    struct pid_namespace *pid_ns,
+				    struct net *net,
+				    struct cgroup_namespace *cgroup_ns,
+				    const char *hostname)
+{
+	struct nsproxy *cur = current->nsproxy;
+	struct nsproxy *nsp;
+	int err;
+
+	nsp = create_nsproxy();
+	if (!nsp)
+		return ERR_PTR(-ENOMEM);
+
+	nsp->uts_ns = copy_utsname(CLONE_NEWUTS, user_ns, cur->uts_ns);
+	if (IS_ERR(nsp->uts_ns)) {
+		err = PTR_ERR(nsp->uts_ns);
+		goto out_free;
+	}
+	/* Nobody else can see it yet. */
+	strscpy_pad(nsp->uts_ns->name.nodename, hostname);
+	strscpy_pad(nsp->uts_ns->name.domainname, "(none)");
+
+	nsp->ipc_ns = copy_ipcs(CLONE_NEWIPC, user_ns, cur->ipc_ns);
+	if (IS_ERR(nsp->ipc_ns)) {
+		err = PTR_ERR(nsp->ipc_ns);
+		goto out_uts;
+	}
+
+	nsp->mnt_ns = mnt_ns_get_from_common(from_mnt_ns(mnt_ns));
+	nsp->pid_ns_for_children = get_pid_ns(pid_ns);
+	nsp->net_ns = get_net(net);
+	get_cgroup_ns(cgroup_ns);
+	nsp->cgroup_ns = cgroup_ns;
+	nsp->time_ns = get_time_ns(cur->time_ns);
+	nsp->time_ns_for_children = get_time_ns(cur->time_ns);
+
+	nsproxy_ns_active_get(nsp);
+	return nsp;
+
+out_uts:
+	put_uts_ns(nsp->uts_ns);
+out_free:
+	kmem_cache_free(nsproxy_cachep, nsp);
+	return ERR_PTR(err);
+}
+#endif
 
 void switch_task_namespaces(struct task_struct *p, struct nsproxy *new)
 {
