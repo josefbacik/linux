@@ -183,6 +183,20 @@ void reset_thread_features(void)
 	current->thread.features_locked = 0;
 }
 
+/**
+ * shstk_clear_thread - a new task takes no shadow stack state from its parent
+ * @p: a task that is being created
+ *
+ * For a task without an mm, which has no address space to have a shadow stack
+ * in. What reset_thread_features() does for the caller at exec.
+ */
+void shstk_clear_thread(struct task_struct *p)
+{
+	memset(&p->thread.shstk, 0, sizeof(struct thread_shstk));
+	p->thread.features = 0;
+	p->thread.features_locked = 0;
+}
+
 unsigned long shstk_alloc_thread_stack(struct task_struct *tsk, u64 clone_flags,
 				       unsigned long stack_size)
 {
