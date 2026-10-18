@@ -14,6 +14,7 @@
 
 #include <linux/anon_inodes.h>
 #include <linux/slab.h>
+#include <linux/cell.h>
 #include <linux/sched/autogroup.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/user.h>
@@ -1603,9 +1604,19 @@ static int copy_mm(u64 clone_flags, struct task_struct *tsk)
 	return 0;
 }
 
-static int copy_exec_state(u64 clone_flags, struct task_struct *tsk)
+static int copy_exec_state(u64 clone_flags, struct task_struct *tsk,
+			   struct cell *cell)
 {
 	struct task_exec_state *exec_state;
+
+	/* Born in a cell: nothing of the parent's, and not dumpable. */
+	if (cell) {
+		exec_state = alloc_task_exec_state(cell_user_ns(cell));
+		if (!exec_state)
+			return -ENOMEM;
+		rcu_assign_pointer(tsk->exec_state, exec_state);
+		return 0;
+	}
 
 	/* CLONE_VM siblings refcount-share the parent's exec_state. */
 	if (clone_flags & CLONE_VM) {
@@ -1625,9 +1636,25 @@ enum copy_fs_flags_t {
 };
 
 static int copy_fs(u64 clone_flags, struct task_struct *tsk,
-		   enum copy_fs_flags_t flags)
+		   enum copy_fs_flags_t flags, struct cell *cell)
 {
 	struct fs_struct *fs;
+
+	/* Born in a cell: at the root of the cell's tree. */
+	if (cell) {
+		struct path root;
+
+		fs = copy_fs_struct(current->fs);
+		if (!fs)
+			return -ENOMEM;
+		cell_root(cell, &root);
+		set_fs_root(fs, &root);
+		set_fs_pwd(fs, &root);
+		path_put(&root);
+		fs->umask = 0022;
+		tsk->real_fs = tsk->fs = fs;
+		return 0;
+	}
 
 	/*
 	 * Usermodehelper may copy userspace_init_fs filesystem state but
@@ -2148,7 +2175,7 @@ __latent_entropy struct task_struct *copy_process(
 	 * free the parent's ret_stack.
 	 */
 	ftrace_graph_init_task(p);
-	retval = copy_exec_state(clone_flags, p);
+	retval = copy_exec_state(clone_flags, p, args->cell);
 	if (retval)
 		goto bad_fork_free;
 	p->flags &= ~PF_KTHREAD;
@@ -2178,7 +2205,7 @@ __latent_entropy struct task_struct *copy_process(
 #ifdef CONFIG_PROVE_LOCKING
 	DEBUG_LOCKS_WARN_ON(!p->softirqs_enabled);
 #endif
-	retval = copy_creds(p, clone_flags);
+	retval = copy_creds(p, clone_flags, args->cell);
 	if (retval < 0)
 		goto bad_fork_free;
 
@@ -2309,7 +2336,7 @@ __latent_entropy struct task_struct *copy_process(
 		goto bad_fork_cleanup_semundo;
 	retval = copy_fs(clone_flags, p,
 			 (args->umh ? COPY_FS_UMH : 0) |
-			 (args->idle ? COPY_FS_IDLE : 0));
+			 (args->idle ? COPY_FS_IDLE : 0), args->cell);
 	if (retval)
 		goto bad_fork_cleanup_semundo;
 	retval = copy_sighand(clone_flags, p);
@@ -2321,7 +2348,7 @@ __latent_entropy struct task_struct *copy_process(
 	retval = copy_mm(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_signal;
-	retval = copy_namespaces(clone_flags, p);
+	retval = copy_namespaces(clone_flags, p, args->cell);
 	if (retval)
 		goto bad_fork_cleanup_mm;
 	retval = copy_io(clone_flags, p);

@@ -140,6 +140,21 @@ void userns_retire_cell_block(struct user_namespace *ns)
 		pr_warn_ratelimited("cell: kuid block %u retired\n", ns->cell_block - 1);
 	ns->cell_block = 0;
 }
+
+/**
+ * userns_enter_cell - make a credential one of the user namespace of a cell
+ * @cred: a credential that nobody else can see yet
+ * @ns:   the user namespace of a cell
+ *
+ * As for a task that enters a user namespace: a full set of capabilities, which
+ * are good for nothing outside of @ns, and default securebits. The caller sets
+ * the ids. Only a new task gets credentials this way, nobody enters a cell.
+ */
+void userns_enter_cell(struct cred *cred, struct user_namespace *ns)
+{
+	put_user_ns(cred->user_ns);
+	set_cred_user_ns(cred, get_user_ns(ns));
+}
 #endif
 
 static unsigned long enforced_nproc_rlimit(void)
