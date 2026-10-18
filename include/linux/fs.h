@@ -1587,6 +1587,8 @@ static inline bool fsuidgid_has_mapping(struct super_block *sb,
 	kgid = mapped_fsgid(idmap, fs_userns);
 	if (!gid_valid(kgid))
 		return false;
+	if (!kuid_storable(fs_userns, kuid) || !kgid_storable(fs_userns, kgid))
+		return false;
 	return kuid_has_mapping(fs_userns, kuid) &&
 	       kgid_has_mapping(fs_userns, kgid);
 }

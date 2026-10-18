@@ -260,7 +260,8 @@ posix_acl_valid(struct user_namespace *user_ns, const struct posix_acl *acl)
 			case ACL_USER:
 				if (state != ACL_USER)
 					return -EINVAL;
-				if (!kuid_has_mapping(user_ns, pa->e_uid))
+				if (!kuid_has_mapping(user_ns, pa->e_uid) ||
+				    !kuid_storable(user_ns, pa->e_uid))
 					return -EINVAL;
 				needs_mask = 1;
 				break;
@@ -275,7 +276,8 @@ posix_acl_valid(struct user_namespace *user_ns, const struct posix_acl *acl)
 			case ACL_GROUP:
 				if (state != ACL_GROUP)
 					return -EINVAL;
-				if (!kgid_has_mapping(user_ns, pa->e_gid))
+				if (!kgid_has_mapping(user_ns, pa->e_gid) ||
+				    !kgid_storable(user_ns, pa->e_gid))
 					return -EINVAL;
 				needs_mask = 1;
 				break;
