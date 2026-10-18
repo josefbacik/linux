@@ -146,4 +146,11 @@ static inline void cell_put(struct cell *cell) { }
 
 #endif
 
+/* The id block allocator. */
+#ifdef CONFIG_CELLS
+void cell_block_release(u32 block);
+#else
+static inline void cell_block_release(u32 block) { }
+#endif
+
 #endif /* _LINUX_CELL_H */
