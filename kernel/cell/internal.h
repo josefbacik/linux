@@ -57,4 +57,7 @@ static inline struct cell *cell_from_fd(const struct fd *f)
 	return cell_from_file(fd_file(*f)) ?: ERR_PTR(-EINVAL);
 }
 
+/* ids.c */
+int cell_set_ids(struct cell *cell, u32 count);
+
 #endif /* _KERNEL_CELL_INTERNAL_H */
