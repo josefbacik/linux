@@ -2081,6 +2081,10 @@ __latent_entropy struct task_struct *copy_process(
 	if ((clone_flags & (CLONE_NEWUSER|CLONE_FS)) == (CLONE_NEWUSER|CLONE_FS))
 		return ERR_PTR(-EINVAL);
 
+	/* The namespaces of a cell are the cell's. A task has no say in them. */
+	if ((clone_flags & CLONE_NS_ALL) && current_cell())
+		return ERR_PTR(-EPERM);
+
 	/*
 	 * Thread groups must share signals as well, and detached threads
 	 * can only be started up within the thread group.
@@ -3312,6 +3316,10 @@ int ksys_unshare(unsigned long unshare_flags)
 	struct nsproxy *new_nsproxy = NULL;
 	int do_sysvsem = 0;
 	int err;
+
+	/* The namespaces of a cell are the cell's. A task has no say in them. */
+	if ((unshare_flags & (CLONE_NS_ALL | UNSHARE_EMPTY_MNTNS)) && current_cell())
+		return -EPERM;
 
 	/*
 	 * If unsharing a user namespace must also unshare the thread group
