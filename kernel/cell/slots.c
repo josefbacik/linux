@@ -73,10 +73,55 @@ static int cell_set_root(struct cell *cell, struct file *file)
 	return 0;
 }
 
+static int cell_make_net(struct cell *cell)
+{
+	struct net *net;
+
+	if (cell->net)
+		return 0;
+	net = copy_net_ns(CLONE_NEWNET, cell->user_ns, current->nsproxy->net_ns);
+	if (IS_ERR(net))
+		return PTR_ERR(net);
+	cell->net = net;
+	return 0;
+}
+
+/* "new": a network namespace of its own, which is also the default. */
+static int cell_set_net_string(struct cell *cell, const char *val)
+{
+	if (strcmp(val, "new"))
+		return -EINVAL;
+	if (cell->net)
+		return -EBUSY;
+	return cell_make_net(cell);
+}
+
+/*
+ * A network namespace to share. It takes what entering it would have taken, and
+ * it is not that of another cell, whose tasks have every capability over it. In
+ * whatever state that cell is: a slot outlives it.
+ */
+static int cell_set_net(struct cell *cell, struct file *file)
+{
+	struct ns_common *ns = cell_ns_from_file(file, CLONE_NEWNET);
+
+	if (IS_ERR(ns))
+		return PTR_ERR(ns);
+	if (cell->net)
+		return -EBUSY;
+	if (!ns_capable(to_net_ns(ns)->user_ns, CAP_SYS_ADMIN) ||
+	    userns_is_cell(to_net_ns(ns)->user_ns))
+		return -EPERM;
+	cell->net = get_net(to_net_ns(ns));
+	return 0;
+}
+
 static int cell_set_string(struct cell *cell, const char *key, const char *val)
 {
 	if (!strcmp(key, "hostname"))
 		return cell_set_hostname(cell, val);
+	if (!strcmp(key, "net"))
+		return cell_set_net_string(cell, val);
 	return -EINVAL;
 }
 
@@ -92,6 +137,8 @@ static int cell_set_fd(struct cell *cell, const char *key, struct file *file)
 		return cell_set_budget(cell, file);
 	if (!strcmp(key, "root"))
 		return cell_set_root(cell, file);
+	if (!strcmp(key, "net"))
+		return cell_set_net(cell, file);
 	return -EINVAL;
 }
 
