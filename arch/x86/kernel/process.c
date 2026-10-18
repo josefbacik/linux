@@ -219,9 +219,23 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 	 * is disabled, new_ssp will remain 0, and fpu_clone() will know not to
 	 * update it.
 	 */
-	new_ssp = shstk_alloc_thread_stack(p, clone_flags, args->stack_size);
-	if (IS_ERR_VALUE(new_ssp))
-		return PTR_ERR((void *)new_ssp);
+	if (unlikely(args->fn && !p->mm)) {
+		/*
+		 * It has no address space to have a shadow stack in, and what
+		 * it will run it has yet to exec. Nothing of the user state of
+		 * whoever created it is any of its business.
+		 */
+		new_ssp = 0;
+		shstk_clear_thread(p);
+#ifdef CONFIG_X86_64
+		p->thread.fsindex = p->thread.gsindex = 0;
+		p->thread.fsbase = p->thread.gsbase = 0;
+#endif
+	} else {
+		new_ssp = shstk_alloc_thread_stack(p, clone_flags, args->stack_size);
+		if (IS_ERR_VALUE(new_ssp))
+			return PTR_ERR((void *)new_ssp);
+	}
 
 	fpu_clone(p, clone_flags, args->fn, new_ssp);
 
@@ -258,6 +272,10 @@ int copy_thread(struct task_struct *p, const struct kernel_clone_args *args)
 		 */
 		childregs->sp = 0;
 		childregs->ip = 0;
+		if (!p->mm) {
+			memset(childregs, 0, sizeof(struct pt_regs));
+			p->thread.pkru = pkru_get_init_value();
+		}
 		kthread_frame_init(frame, args->fn, args->fn_arg);
 		return 0;
 	}
