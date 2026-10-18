@@ -53,9 +53,13 @@ static inline bool cell_range_in_window(u32 first, u32 count)
 	return first <= CELL_ID_WINDOW_LAST && last >= CELL_ID_WINDOW_FIRST;
 }
 
+bool userns_is_cell(const struct user_namespace *ns);
+
 #else
 
 static inline bool cell_id_in_window(u32 id) { return false; }
 static inline bool cell_range_in_window(u32 first, u32 count) { return false; }
+static inline bool userns_is_cell(const struct user_namespace *ns) { return false; }
+
 #endif
 #endif /* _LINUX_CELL_IDS_H */

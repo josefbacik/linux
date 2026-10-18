@@ -40,6 +40,7 @@ struct uid_gid_map { /* 64 bytes -- 1 cache line */
 #define USERNS_INIT_FLAGS USERNS_SETGROUPS_ALLOWED
 
 struct ucounts;
+struct cell;
 
 enum ucount_type {
 	UCOUNT_USER_NAMESPACES,
@@ -117,6 +118,9 @@ struct user_namespace {
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
 	struct binfmt_misc *binfmt_misc;
 #endif
+#ifdef CONFIG_CELLS
+	struct cell		*cell;		/* whose namespace this is, counted */
+#endif
 } __randomize_layout;
 
 struct ucounts {
@@ -184,6 +188,9 @@ static inline struct user_namespace *get_user_ns(struct user_namespace *ns)
 }
 
 extern int create_user_ns(struct cred *new);
+#ifdef CONFIG_CELLS
+int create_cell_user_ns(struct cred *new, struct cell *cell);
+#endif
 extern int unshare_userns(unsigned long unshare_flags, struct cred **new_cred);
 extern void __put_user_ns(struct user_namespace *ns);
 
