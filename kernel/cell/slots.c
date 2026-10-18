@@ -231,6 +231,9 @@ SYSCALL_DEFINE5(cell_configure, int, cfd, unsigned int, cmd,
 		if (IS_ERR(key))
 			return PTR_ERR(no_free_ptr(key));
 	}
+	/* Reserved. See cell_may_spawn(). */
+	if (key && !strcmp(key, "spawn"))
+		return -EOPNOTSUPP;
 	if (cmd == CELL_SET_STRING) {
 		str = strndup_user(uvalue, 256);
 		if (IS_ERR(str))
