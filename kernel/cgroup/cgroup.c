@@ -7134,6 +7134,30 @@ int cgroup_cell_chown(struct cgroup *cgrp, kuid_t uid, kgid_t gid)
 	}
 	return ret;
 }
+
+/**
+ * cgroup_cell_kill - kill everything in a cgroup and below
+ * @cgrp: the cgroup
+ *
+ * As a write to cgroup.kill. It closes against forks in flight by kill_seq.
+ *
+ * Return: whether the cgroup is still populated, as cgroup.events has it. A
+ * task counts until it has been switched out for the last time, see
+ * cgroup_task_dead(). That is longer than a task iterator shows it, and it is
+ * what cgroup_destroy_locked() goes by.
+ */
+bool cgroup_cell_kill(struct cgroup *cgrp)
+{
+	bool busy = false;
+
+	cgroup_lock();
+	if (!cgroup_is_dead(cgrp)) {
+		cgroup_kill(cgrp);
+		busy = cgroup_is_populated(cgrp);
+	}
+	cgroup_unlock();
+	return busy;
+}
 #endif /* CONFIG_CELLS */
 
 /**
