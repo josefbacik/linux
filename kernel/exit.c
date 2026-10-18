@@ -6,6 +6,7 @@
  */
 
 #include <linux/mm.h>
+#include <linux/cell.h>
 #include <linux/slab.h>
 #include <linux/sched/autogroup.h>
 #include <linux/sched/mm.h>
@@ -747,11 +748,20 @@ static void forget_original_parent(struct task_struct *father,
  */
 static void exit_notify(struct task_struct *tsk, int group_dead)
 {
+	struct cell *cell = NULL;
 	bool autoreap;
 	struct task_struct *p, *n;
 	LIST_HEAD(dead);
 
 	write_lock_irq(&tasklist_lock);
+	/*
+	 * Is this the end of the init of a cell? Asked of the pid namespace
+	 * and not of the task, and asked now: once the lock is dropped the
+	 * parent may reap us, pids and all. The cell holds on to its pid
+	 * namespace until it is torn down, which only this sets off.
+	 */
+	if (group_dead && is_child_reaper(task_tgid(tsk)))
+		cell = userns_cell(ns_of_pid(task_tgid(tsk))->user_ns);
 	forget_original_parent(tsk, &dead);
 
 	if (group_dead)
@@ -781,6 +791,10 @@ static void exit_notify(struct task_struct *tsk, int group_dead)
 	if (unlikely(tsk->signal->notify_count < 0))
 		wake_up_process(tsk->signal->group_exec_task);
 	write_unlock_irq(&tasklist_lock);
+
+	/* With its init, and so everything else in it, gone, so is a cell. */
+	if (cell)
+		cell_init_exited(cell, tsk);
 
 	list_for_each_entry_safe(p, n, &dead, ptrace_entry) {
 		list_del_init(&p->ptrace_entry);

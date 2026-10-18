@@ -212,4 +212,11 @@ void embryo_pidfd_release(struct pid *pid);
 static inline void embryo_pidfd_release(struct pid *pid) { }
 #endif
 
+/* The end of a cell. */
+#ifdef CONFIG_CELLS
+void cell_init_exited(struct cell *cell, struct task_struct *tsk);
+#else
+static inline void cell_init_exited(struct cell *cell, struct task_struct *tsk) { }
+#endif
+
 #endif /* _LINUX_CELL_H */

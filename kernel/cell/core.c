@@ -180,6 +180,53 @@ static void cell_kill_workfn(struct work_struct *work)
 	cell_put(cell);
 }
 
+static void cell_exit_workfn(struct work_struct *work)
+{
+	struct cell *cell = container_of(to_delayed_work(work), struct cell,
+					 exit_work);
+
+	scoped_guard(mutex, &cell->lock) {
+		if (cell->state == CELL_DEAD)
+			break;
+		WRITE_ONCE(cell->state, CELL_DYING);
+		/*
+		 * DEAD means gone. zap_pid_ns_processes() has reaped everything
+		 * else in the pid namespace, but the init itself is still on
+		 * its way out. It populates the budget until it is off the cpu
+		 * for good. Come back until then.
+		 */
+		if (cgroup_cell_kill(cell->budget)) {
+			queue_delayed_work(system_dfl_wq, &cell->exit_work,
+					   max(HZ / 100, 1));
+			return;
+		}
+		cell_teardown(cell);
+	}
+	cell_put(cell);
+}
+
+/**
+ * cell_init_exited - the init of the pid namespace of a cell is gone
+ * @cell: the cell
+ * @tsk:  the last thread of that init, which is the caller
+ *
+ * With its init everything else in the pid namespace is gone, and so the cell.
+ * This notes the exit status and owes the teardown to a work item.
+ *
+ * Context: The exit path of @tsk, after zap_pid_ns_processes(), with no locks
+ * held. The cell has not been torn down, since only this sets that off once a
+ * cell has run anything.
+ */
+void cell_init_exited(struct cell *cell, struct task_struct *tsk)
+{
+	cell->exit_status = (tsk->signal->flags & SIGNAL_GROUP_EXIT) ?
+			    tsk->signal->group_exit_code :
+			    tsk->group_leader->exit_code;
+	cell_get(cell);
+	if (!queue_delayed_work(system_dfl_wq, &cell->exit_work, 0))
+		cell_put(cell);
+}
+
 /* The cellfd. */
 
 static int cell_file_open(struct inode *inode, struct file *file)
@@ -294,6 +341,7 @@ SYSCALL_DEFINE2(cell_create, int, parent, unsigned int, flags)
 	mutex_init(&cell->lock);
 	init_waitqueue_head(&cell->wait);
 	INIT_WORK(&cell->kill_work, cell_kill_workfn);
+	INIT_DELAYED_WORK(&cell->exit_work, cell_exit_workfn);
 	strscpy(cell->hostname, "(none)");
 
 	/* The scratch credential is only here to carry the new namespace. */
