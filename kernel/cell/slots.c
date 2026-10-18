@@ -332,3 +332,64 @@ SYSCALL_DEFINE5(cell_configure, int, cfd, unsigned int, cmd,
 	}
 	return -EOPNOTSUPP;
 }
+
+/**
+ * sys_cell_open - get another file descriptor from a cell
+ * @cfd:   a cellfd
+ * @what:  one of enum cell_open_what
+ * @ukey:  for CELL_OPEN_SLOT the name of the slot, "net" or "pids"
+ * @arg:   nothing yet, must be NULL
+ * @flags: none yet, must be 0
+ *
+ * For now only this: an nsfs file descriptor on the network or pid namespace of
+ * a cell that is still being built, so that the builder can move a device in or
+ * mount a procfs for it, the way it would for any container. The namespace is
+ * made if the cell does not have it yet.
+ *
+ * Return: a file descriptor, which is close-on-exec, or a negative error.
+ */
+SYSCALL_DEFINE5(cell_open, int, cfd, unsigned int, what,
+		const char __user *, ukey, const void __user *, arg,
+		unsigned int, flags)
+{
+	char *key __free(kfree) = NULL;
+	struct ns_common *ns;
+	struct cell *cell;
+	int ret;
+
+	if (what != CELL_OPEN_SLOT)
+		return -EOPNOTSUPP;
+	if (!ukey || arg || flags)
+		return -EINVAL;
+
+	CLASS(fd, f)(cfd);
+	cell = cell_from_fd(&f);
+	if (IS_ERR(cell))
+		return PTR_ERR(cell);
+
+	key = strndup_user(ukey, CELL_KEY_MAX);
+	if (IS_ERR(key))
+		return PTR_ERR(no_free_ptr(key));
+
+	scoped_guard(mutex, &cell->lock) {
+		if (cell->state != CELL_BUILDING)
+			return -EBUSY;
+
+		if (!strcmp(key, "net")) {
+			ret = cell_make_net(cell);
+			if (ret)
+				return ret;
+			ns = &get_net(cell->net)->ns;
+		} else if (!strcmp(key, "pids")) {
+			ret = cell_make_pid_ns(cell);
+			if (ret)
+				return ret;
+			ns = &get_pid_ns(cell->pid_ns)->ns;
+		} else {
+			return -EINVAL;
+		}
+	}
+
+	/* Consumes the reference, whatever happens. */
+	return open_namespace(ns);
+}
