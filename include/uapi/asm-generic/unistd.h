@@ -867,8 +867,19 @@ __SYSCALL(__NR_rseq_slice_yield, sys_rseq_slice_yield)
 #define __NR_fchroot 472
 __SYSCALL(__NR_fchroot, sys_fchroot)
 
+#define __NR_cell_create 473
+__SYSCALL(__NR_cell_create, sys_cell_create)
+#define __NR_cell_configure 474
+__SYSCALL(__NR_cell_configure, sys_cell_configure)
+#define __NR_cell_info 475
+__SYSCALL(__NR_cell_info, sys_cell_info)
+#define __NR_cell_open 476
+__SYSCALL(__NR_cell_open, sys_cell_open)
+#define __NR_task_configure 477
+__SYSCALL(__NR_task_configure, sys_task_configure)
+
 #undef __NR_syscalls
-#define __NR_syscalls 473
+#define __NR_syscalls 478
 
 /*
  * 32 bit systems traditionally used different
