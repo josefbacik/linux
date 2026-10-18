@@ -236,4 +236,16 @@ void cell_init_exited(struct cell *cell, struct task_struct *tsk);
 static inline void cell_init_exited(struct cell *cell, struct task_struct *tsk) { }
 #endif
 
+/* Nobody enters a cell. */
+#ifdef CONFIG_CELLS
+bool cell_ns_may_enter(const struct ns_common *ns,
+		       const struct user_namespace *owner);
+#else
+static inline bool cell_ns_may_enter(const struct ns_common *ns,
+				     const struct user_namespace *owner)
+{
+	return true;
+}
+#endif
+
 #endif /* _LINUX_CELL_H */
