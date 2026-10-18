@@ -53,5 +53,6 @@ static inline struct user_struct *get_uid(struct user_struct *u)
 	return u;
 }
 extern void free_uid(struct user_struct *);
+bool uid_range_in_use(kuid_t first, kuid_t last);
 
 #endif /* _LINUX_SCHED_USER_H */
