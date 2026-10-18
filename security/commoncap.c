@@ -3,6 +3,7 @@
  */
 
 #include <linux/capability.h>
+#include <linux/cell_ids.h>
 #include <linux/audit.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
@@ -90,9 +91,11 @@ static inline int cap_capable_helper(const struct cred *cred,
 
 		/* 
 		 * The owner of the user namespace in the parent of the
-		 * user namespace has all caps.
+		 * user namespace has all caps. Not over a cell: authority
+		 * over a cell is a handle, not a uid.
 		 */
-		if ((ns->parent == cred_ns) && uid_eq(ns->owner, cred->euid))
+		if ((ns->parent == cred_ns) && uid_eq(ns->owner, cred->euid) &&
+		    !userns_is_cell(ns))
 			return 0;
 
 		/*
