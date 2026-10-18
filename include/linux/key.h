@@ -456,6 +456,7 @@ extern void key_set_timeout(struct key *, unsigned);
 extern key_ref_t lookup_user_key(key_serial_t id, unsigned long flags,
 				 enum key_need_perm need_perm);
 extern void key_free_user_ns(struct user_namespace *);
+bool key_user_range_in_use(kuid_t first, kuid_t last);
 
 static inline short key_read_state(const struct key *key)
 {
@@ -516,6 +517,7 @@ extern void key_init(void);
 #define key_fsgid_changed(c)		do { } while(0)
 #define key_init()			do { } while(0)
 #define key_free_user_ns(ns)		do { } while(0)
+static inline bool key_user_range_in_use(kuid_t first, kuid_t last) { return false; }
 #define key_remove_domain(d)		do { } while(0)
 #define key_lookup(k)			NULL
 
