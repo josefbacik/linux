@@ -5193,6 +5193,19 @@ static int build_mount_idmapped(const struct mount_attr *attr, size_t usize,
 	if (fd_empty(f))
 		return -EBADF;
 
+	/*
+	 * "For this cell." The ids on the caller's side of the mapping are
+	 * the cell's own, so there is nobody to ask about them. What is asked
+	 * about the filesystem is the same as ever.
+	 */
+	mnt_userns = cell_idmap_userns(fd_file(f));
+	if (mnt_userns) {
+		if (IS_ERR(mnt_userns))
+			return PTR_ERR(mnt_userns);
+		kattr->mnt_userns = mnt_userns;
+		return 0;
+	}
+
 	if (!proc_ns_file(fd_file(f)))
 		return -EINVAL;
 

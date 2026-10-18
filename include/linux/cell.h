@@ -255,4 +255,11 @@ bool cell_may_migrate(struct task_struct *task, struct cgroup *dst);
 static inline bool cell_may_migrate(struct task_struct *t, struct cgroup *d) { return true; }
 #endif
 
+/* A mount is idmapped for a cell. */
+#ifdef CONFIG_CELLS
+struct user_namespace *cell_idmap_userns(const struct file *file);
+#else
+static inline struct user_namespace *cell_idmap_userns(const struct file *f) { return NULL; }
+#endif
+
 #endif /* _LINUX_CELL_H */

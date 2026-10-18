@@ -37,6 +37,31 @@ bool cell_ns_may_enter(const struct ns_common *ns,
 }
 
 /**
+ * cell_idmap_userns - the user namespace to idmap a mount with, by cellfd
+ * @file: what was passed in mount_attr.userns_fd
+ *
+ * A cellfd there means "for this cell". It works while the cell is being built
+ * and once its ids have been set.
+ *
+ * Return: the user namespace of the cell with a reference, NULL if @file is no
+ * cellfd, or an ERR_PTR().
+ */
+struct user_namespace *cell_idmap_userns(const struct file *file)
+{
+	struct cell *cell = cell_from_file(file);
+
+	if (!cell)
+		return NULL;
+
+	guard(mutex)(&cell->lock);
+	if (cell->state != CELL_BUILDING)
+		return ERR_PTR(-EBUSY);
+	if (!cell->ids_count)
+		return ERR_PTR(-EINVAL);
+	return get_user_ns(cell->user_ns);
+}
+
+/**
  * cell_may_migrate - may a task be moved to a cgroup?
  * @task: the task
  * @dst:  the cgroup
