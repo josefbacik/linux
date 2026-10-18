@@ -1232,6 +1232,11 @@ static ssize_t map_write(struct file *file, const char __user *buf,
 		if (lower_first == (u32) -1)
 			goto out;
 
+		/* Those ids are the kernel's to hand out, to cells. */
+		if (cap_valid(cap_setid) &&
+		    cell_range_in_window(lower_first, e->count))
+			goto out;
+
 		e->lower_first = lower_first;
 	}
 
