@@ -658,6 +658,10 @@ SYSCALL_DEFINE2(setns, int, fd, int, flags)
 	if (fd_empty(f))
 		return -EBADF;
 
+	/* The namespaces of a cell are the cell's. A task has no say in them. */
+	if (current_cell())
+		return -EPERM;
+
 	if (proc_ns_file(fd_file(f))) {
 		ns = get_proc_ns(file_inode(fd_file(f)));
 		if (flags && (ns->ns_type != flags))
