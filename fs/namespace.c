@@ -3348,6 +3348,9 @@ static struct file *vfs_open_tree(int dfd, const char __user *filename, unsigned
 	 * just care about being privileged over our current user namespace.
 	 * The new mount namespace will be owned by it.
 	 */
+	if ((flags & OPEN_TREE_NAMESPACE) && current_cell())
+		return ERR_PTR(-EPERM);
+
 	if ((flags & OPEN_TREE_NAMESPACE) &&
 	    !ns_capable(current_user_ns(), CAP_SYS_ADMIN))
 		return ERR_PTR(-EPERM);
@@ -4607,6 +4610,9 @@ SYSCALL_DEFINE3(fsmount, int, fs_fd, unsigned int, flags,
 
 	if ((flags & ~(FSMOUNT_CLOEXEC | FSMOUNT_NAMESPACE)) != 0)
 		return -EINVAL;
+
+	if ((flags & FSMOUNT_NAMESPACE) && current_cell())
+		return -EPERM;
 
 	if ((flags & FSMOUNT_NAMESPACE) &&
 	    !ns_capable(current_user_ns(), CAP_SYS_ADMIN))
