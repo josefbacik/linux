@@ -229,4 +229,11 @@ static inline bool embryo_pidfd_is_empty(const struct file *file) { return false
 static inline void embryo_pidfd_release(struct file *file) { }
 #endif
 
+/* The end of a cell. */
+#ifdef CONFIG_CELLS
+void cell_init_exited(struct cell *cell, struct task_struct *tsk);
+#else
+static inline void cell_init_exited(struct cell *cell, struct task_struct *tsk) { }
+#endif
+
 #endif /* _LINUX_CELL_H */
