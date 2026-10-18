@@ -113,6 +113,39 @@ out:
 	return user;
 }
 
+#ifdef CONFIG_CELLS
+/**
+ * key_user_range_in_use - is there a quota record for any uid of a range?
+ * @first: the first uid of the range
+ * @last:  the last
+ *
+ * A quota record, and so possibly a key, is keyed by a bare kuid and pins no
+ * user namespace. The id block allocator asks before it lends a block, and
+ * before it takes one back.
+ *
+ * Return: true if there is one.
+ */
+bool key_user_range_in_use(kuid_t first, kuid_t last)
+{
+	struct rb_node *n;
+
+	guard(spinlock)(&key_user_lock);
+
+	n = key_user_tree.rb_node;
+	while (n) {
+		struct key_user *user = rb_entry(n, struct key_user, node);
+
+		if (uid_lt(last, user->uid))
+			n = n->rb_left;
+		else if (uid_gt(first, user->uid))
+			n = n->rb_right;
+		else
+			return true;
+	}
+	return false;
+}
+#endif
+
 /*
  * Dispose of a user structure
  */
