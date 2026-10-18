@@ -76,6 +76,7 @@ struct embryo {
 
 	struct pid		*pid;		/* the reference alloc_pid_struct() returned */
 	struct cell		*cell;		/* where the task is going to be */
+	u64			cell_id;	/* of that cell */
 	struct user_namespace	*user_ns;	/* likewise */
 
 	int			result;
@@ -122,6 +123,19 @@ static int embryo_install_fds(struct embryo *e)
 			return ret;
 	}
 	return 0;
+}
+
+/*
+ * The exec went through, so these ends are the cell's from here on. Not any
+ * earlier: a socket that was to go to a task which never started stays with
+ * whoever has it.
+ */
+static void embryo_fds_crossed(struct embryo *e)
+{
+	unsigned int i;
+
+	for (i = 0; i < e->nr_fds; i++)
+		unix_file_cross_cell(e->fds[i].file, e->cell_id);
 }
 
 /*
@@ -236,6 +250,8 @@ static int embryo_main(void *arg)
 
 	/* @started is set, so nobody changes anything any more. */
 	ret = embryo_exec(e);
+	if (!ret)
+		embryo_fds_crossed(e);
 	embryo_drop_config(e);
 	/*
 	 * A signal to the embryo is no signal to whoever started it. Whatever
@@ -345,6 +361,7 @@ int embryo_pidfd_open(int cfd, unsigned int flags)
 	}
 	e->pid = alloc_pid_struct(cell_nsproxy(cell)->pid_ns_for_children);
 	e->cell = cell_get(cell);
+	e->cell_id = cell_id(cell);
 	e->user_ns = get_user_ns(cell_user_ns(cell));
 	cell_fork_finish(cell);
 

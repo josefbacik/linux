@@ -829,6 +829,49 @@ static inline u64 unix_skb_cell(const struct sk_buff *skb) { return 0; }
 static inline bool unix_skb_foreign(const struct sk_buff *skb) { return false; }
 #endif
 
+/*
+ * A sender is told right away that control data will not arrive, where that can
+ * be known: each socket records the cell that holds it. That is a courtesy. The
+ * rule above is what counts.
+ */
+#ifdef CONFIG_CELLS
+static inline bool unix_sk_foreign(const struct sock *other)
+{
+	return READ_ONCE(unix_sk(other)->cell_id) != current_cell_id();
+}
+
+static inline void unix_sk_set_cell(struct sock *sk, u64 cell_id)
+{
+	WRITE_ONCE(unix_sk(sk)->cell_id, cell_id);
+}
+
+static inline u64 unix_sk_cell(const struct sock *sk)
+{
+	return READ_ONCE(unix_sk(sk)->cell_id);
+}
+
+/**
+ * unix_file_cross_cell - a file is being given to a task of another cell
+ * @file:    any file
+ * @cell_id: the id of that cell
+ *
+ * If @file is a unix socket, it is held by that cell from here on. This only
+ * serves to tell a sender early that control data will not arrive. Whether it
+ * does is decided where it is received.
+ */
+void unix_file_cross_cell(struct file *file, u64 cell_id)
+{
+	struct unix_sock *u = unix_get_socket(file);
+
+	if (u)
+		unix_sk_set_cell(&u->sk, cell_id);
+}
+#else
+static inline bool unix_sk_foreign(const struct sock *other) { return false; }
+static inline void unix_sk_set_cell(struct sock *sk, u64 cell_id) { }
+static inline u64 unix_sk_cell(const struct sock *sk) { return 0; }
+#endif
+
 static bool unix_may_passcred(const struct sock *sk)
 {
 	return sk->sk_scm_credentials || sk->sk_scm_pidfd ||
@@ -1146,6 +1189,7 @@ static struct sock *unix_create1(struct net *net, struct socket *sock, int kern,
 	sock_init_data(sock, sk);
 
 	sk->sk_scm_rights	= 1;
+	unix_sk_set_cell(sk, current_cell_id());
 	sk->sk_hash		= unix_unbound_hash(sk);
 	sk->sk_allocation	= GFP_KERNEL_ACCOUNT;
 	sk->sk_write_space	= unix_write_space;
@@ -1777,6 +1821,8 @@ restart:
 	newsk->sk_state = TCP_ESTABLISHED;
 	newsk->sk_type = sk->sk_type;
 	newsk->sk_scm_recv_flags = other->sk_scm_recv_flags;
+	/* It is the listener's end, whoever made it. */
+	unix_sk_set_cell(newsk, unix_sk_cell(other));
 	init_peercred(newsk, &peercred);
 
 	newu = unix_sk(newsk);
@@ -2284,6 +2330,11 @@ restart_locked:
 		goto out_unlock;
 	}
 
+	if (msg->msg_controllen && unix_sk_foreign(other)) {
+		err = -EPERM;
+		goto out_unlock;
+	}
+
 	if (sk->sk_type != SOCK_SEQPACKET) {
 		err = security_unix_may_send(sk->sk_socket, other->sk_socket);
 		if (err)
@@ -2455,6 +2506,11 @@ static int unix_stream_sendmsg(struct socket *sock, struct msghdr *msg,
 	}
 
 	otheru = unix_sk(other);
+
+	if (msg->msg_controllen && unix_sk_foreign(other)) {
+		err = -EPERM;
+		goto out_err;
+	}
 
 	if (READ_ONCE(sk->sk_shutdown) & SEND_SHUTDOWN)
 		goto out_pipe;
