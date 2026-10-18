@@ -17,6 +17,7 @@
 
 #include <linux/refcount.h>
 #include <linux/audit.h>
+#include <linux/cell.h>
 #include <linux/compat.h>
 #include <linux/coredump.h>
 #include <linux/kmemleak.h>
@@ -1754,6 +1755,17 @@ static long seccomp_notify_addfd(struct seccomp_filter *filter,
 		ret = -ENOENT;
 		goto out_unlock;
 	}
+
+	/*
+	 * Filters are inherited by what is spawned into a cell, and the
+	 * listener stays behind. No file crosses the boundary of a cell.
+	 */
+	scoped_guard(rcu) {
+		if (!cell_same(current_cred(), __task_cred(knotif->task)))
+			ret = -EPERM;
+	}
+	if (ret)
+		goto out_unlock;
 
 	/*
 	 * We do not want to allow for FD injection to occur before the
