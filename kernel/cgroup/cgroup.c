@@ -7064,6 +7064,44 @@ out:
 }
 
 /**
+ * cgroup_cell_budget_put - the cell is gone, give its budget back
+ * @cgrp:   the budget. The reference is consumed
+ * @handed: the cgroup had been handed to the cell's root
+ * @uid:    who owned it before
+ * @gid:    likewise
+ *
+ * The cgroup is empty. Whatever the cell made below it is owned by ids that
+ * were only lent to the cell, so it goes, and the cgroup itself returns to its
+ * owner.
+ *
+ * Return: 0, or an error if something is left that is owned by the cell's ids.
+ */
+int cgroup_cell_budget_put(struct cgroup *cgrp, bool handed, kuid_t uid, kgid_t gid)
+{
+	struct cgroup_subsys_state *css;
+	struct cgroup *dsct;
+	int ret = 0;
+
+	cgroup_lock();
+	clear_bit(CGRP_CELL_BUDGET, &cgrp->flags);
+	if (handed && !cgroup_is_dead(cgrp)) {
+		cgroup_for_each_live_descendant_post(dsct, css, cgrp) {
+			if (dsct == cgrp)
+				continue;
+			ret = cgroup_destroy_locked(dsct);
+			if (ret)
+				break;
+		}
+	}
+	cgroup_unlock();
+
+	if (handed && !ret)
+		ret = cgroup_cell_chown(cgrp, uid, gid);
+	cgroup_put(cgrp);
+	return ret;
+}
+
+/**
  * cgroup_cell_chown - hand a cgroup to somebody
  * @cgrp: the cgroup
  * @uid:  the new owner
