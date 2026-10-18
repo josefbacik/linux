@@ -467,6 +467,11 @@ out:
 
 static inline int validate_ns(struct nsset *nsset, struct ns_common *ns)
 {
+	struct user_namespace *owner = ns->ops->owner ? ns->ops->owner(ns) : NULL;
+
+	/* Nobody enters a cell. The mount namespace looks after itself. */
+	if (owner && !cell_ns_may_enter(ns, owner))
+		return -EPERM;
 	return ns->ops->install(nsset, ns);
 }
 
