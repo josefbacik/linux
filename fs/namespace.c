@@ -9,6 +9,7 @@
  */
 
 #include <linux/syscalls.h>
+#include <linux/cell.h>
 #include <linux/export.h>
 #include <linux/capability.h>
 #include <linux/mnt_namespace.h>
@@ -6695,6 +6696,138 @@ static void mntns_put(struct ns_common *ns)
 	put_mnt_ns(to_mnt_ns(ns));
 }
 
+#ifdef CONFIG_CELLS
+static inline bool mnt_ns_cell_sealed(const struct mnt_namespace *ns)
+{
+	return ns->cell_sealed;
+}
+
+/**
+ * mnt_ns_get_from_common - take a reference on a mount namespace
+ * @ns: the ns_common of a mount namespace
+ *
+ * For callers outside of fs/, which cannot see into struct mnt_namespace.
+ *
+ * Return: the mount namespace, with a reference for put_mnt_ns().
+ */
+struct mnt_namespace *mnt_ns_get_from_common(struct ns_common *ns)
+{
+	struct mnt_namespace *mnt_ns = to_mnt_ns(ns);
+
+	get_mnt_ns(mnt_ns);
+	return mnt_ns;
+}
+
+/**
+ * mnt_ns_may_claim - may the caller make a mount namespace a cell's?
+ * @ns: the ns_common of a mount namespace
+ *
+ * Return: true if the caller has CAP_SYS_ADMIN over the owner of @ns, which is
+ * what mounting in it takes.
+ */
+bool mnt_ns_may_claim(struct ns_common *ns)
+{
+	return ns_capable(to_mnt_ns(ns)->user_ns, CAP_SYS_ADMIN);
+}
+
+/**
+ * mnt_ns_seal_for_cell - make a mount namespace a cell's
+ * @ns:      the namespace. The caller holds @nr_refs references on it
+ * @nr_refs: see above
+ * @cell_ns: the cell's user namespace
+ * @ranged:  the cell has a block of ids of its own
+ * @root:    where to return the root of the tree
+ *
+ * The tree was built from scratch by whoever builds the cell, one mount at a
+ * time. Whatever is in it the cell may see all of, including what lies under
+ * every mount point: a mount is never what keeps something from a cell. So no
+ * mount may be locked, other than the tree itself on the empty root of @ns.
+ * Nothing propagates into a cell either, so the tree is cut loose from every
+ * peer and master.
+ *
+ * Nothing is changed unless everything checks out.
+ *
+ * Return: 0, -EBUSY if somebody is in @ns, on the way in, or it is a cell's
+ * already, -EINVAL if a mount is locked or @ns will not do, -EOVERFLOW if a
+ * writable mount is not for the ids of the cell.
+ */
+int mnt_ns_seal_for_cell(struct mnt_namespace *ns, unsigned int nr_refs,
+			 struct user_namespace *cell_ns, bool ranged,
+			 struct path *root)
+{
+	struct mount *m;
+	int err;
+
+	if (is_anon_ns(ns) || ns == current->nsproxy->mnt_ns)
+		return -EINVAL;
+
+	err = vfs_path_lookup(ns->root->mnt.mnt_root, &ns->root->mnt, "/",
+			      LOOKUP_DOWN, root);
+	if (err)
+		return err;
+
+	scoped_guard(namespace_excl) {
+		err = -EBUSY;
+		if (ns->cell_sealed)
+			goto out;
+		/*
+		 * Nobody is in it and nobody is on the way in: besides the
+		 * caller only an nsfs inode may hold on to it.
+		 */
+		if (ns_ref_read(ns) != nr_refs + !!READ_ONCE(ns->ns.stashed))
+			goto out;
+
+		for (m = ns->root; m; m = next_mnt(m, ns->root)) {
+			struct super_block *sb = m->mnt.mnt_sb;
+
+			/*
+			 * A locked mount hides what it covers. The exception
+			 * covers nothing: create_new_namespace() locks the tree
+			 * it puts on top of the root of the namespace if the
+			 * caller's own is locked, which it is for whoever made
+			 * a user namespace to do the mount work in. That root is
+			 * an empty nullfs.
+			 */
+			err = -EINVAL;
+			if ((m->mnt.mnt_flags & MNT_LOCKED) &&
+			    !(m->mnt_parent == ns->root &&
+			      ns->root->mnt.mnt_sb->s_type == &nullfs_fs_type))
+				goto out;
+
+			/*
+			 * Only the early and readable form of an error that
+			 * kuid_storable() would make of every create and chown.
+			 */
+			err = -EOVERFLOW;
+			if (!ranged || __mnt_is_readonly(&m->mnt) ||
+			    !(sb->s_type->fs_flags & FS_ALLOW_IDMAP) ||
+			    sb->s_user_ns == cell_ns)
+				continue;
+			if (!mnt_idmap_is_for_cell(mnt_idmap(&m->mnt), cell_ns))
+				goto out;
+		}
+
+		for (m = ns->root; m; m = next_mnt(m, ns->root))
+			change_mnt_propagation(m, MS_PRIVATE);
+		ns->cell_sealed = true;
+		scoped_guard(mount_locked_reader)
+			touch_mnt_namespace(ns);
+		err = 0;
+	}
+out:
+	if (err) {
+		path_put(root);
+		memset(root, 0, sizeof(*root));
+	}
+	return err;
+}
+#else
+static inline bool mnt_ns_cell_sealed(const struct mnt_namespace *ns)
+{
+	return false;
+}
+#endif
+
 static int mntns_install(struct nsset *nsset, struct ns_common *ns)
 {
 	struct nsproxy *nsproxy = nsset->nsproxy;
@@ -6715,7 +6848,15 @@ static int mntns_install(struct nsset *nsset, struct ns_common *ns)
 	if (fs->users != 1)
 		return -EINVAL;
 
-	get_mnt_ns(mnt_ns);
+	/*
+	 * Either this sees that the namespace has become a cell's, or the
+	 * sealing of the cell sees the reference.
+	 */
+	scoped_guard(namespace_shared) {
+		if (mnt_ns_cell_sealed(mnt_ns))
+			return -EPERM;
+		get_mnt_ns(mnt_ns);
+	}
 	old_mnt_ns = nsproxy->mnt_ns;
 	nsproxy->mnt_ns = mnt_ns;
 

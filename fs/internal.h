@@ -342,6 +342,8 @@ int path_from_stashed(struct dentry **stashed, struct vfsmount *mnt, void *data,
 void stashed_dentry_prune(struct dentry *dentry);
 struct dentry *stash_dentry(struct dentry **stashed, struct dentry *dentry);
 struct dentry *stashed_dentry_get(struct dentry **stashed);
+bool mnt_idmap_is_for_cell(const struct mnt_idmap *idmap,
+			   const struct user_namespace *cell_ns);
 /**
  * path_mounted - check whether path is mounted
  * @path: path to check
