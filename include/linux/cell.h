@@ -179,4 +179,30 @@ static inline void cell_root(struct cell *cell, struct path *root) { }
 static inline struct cgroup *cell_budget(struct cell *cell) { return NULL; }
 #endif
 
+/* Embryo tasks. */
+#ifdef CONFIG_CELLS
+
+/**
+ * task_is_embryo - is a task still waiting to be configured and started?
+ * @task: a task
+ *
+ * Return: true from the time clone3(CLONE_EMBRYO) made @task until its exec has
+ * succeeded or it is on its way out.
+ */
+static inline bool task_is_embryo(const struct task_struct *task)
+{
+	return READ_ONCE(task->embryo);
+}
+
+int embryo_fork_prepare(struct kernel_clone_args *args);
+void embryo_fork_finish(struct kernel_clone_args *args, struct task_struct *p);
+
+#else
+
+static inline bool task_is_embryo(const struct task_struct *task) { return false; }
+static inline int embryo_fork_prepare(struct kernel_clone_args *a) { return -EINVAL; }
+static inline void embryo_fork_finish(struct kernel_clone_args *a, struct task_struct *p) { }
+
+#endif
+
 #endif /* _LINUX_CELL_H */

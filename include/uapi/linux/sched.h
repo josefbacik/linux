@@ -40,6 +40,7 @@
 #define CLONE_NNP		(1ULL << 35) /* Set no_new_privs on child. */
 #define CLONE_PIDFD_AUTOKILL	(1ULL << 36) /* Kill child when clone pidfd closes. */
 #define CLONE_EMPTY_MNTNS	(1ULL << 37) /* Create an empty mount namespace. */
+#define CLONE_EMBRYO		(1ULL << 38) /* Create a task that waits to be started. */
 #define CLONE_INTO_CELL		(1ULL << 39) /* Create the task in the cell given by a cellfd. */
 
 /*
