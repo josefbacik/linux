@@ -1473,6 +1473,22 @@ config USER_NS_MAP_KUNIT_TEST
 
 	  If unsure, say N.
 
+config CELLS
+	bool "Cells"
+	depends on USER_NS && PID_NS && NET_NS && IPC_NS && UTS_NS && CGROUPS
+	depends on UNIX
+	help
+	  A cell is a container as one kernel object. It is built from the
+	  outside by filling slots from file descriptors, sealed, and has
+	  tasks spawned into it. A task never changes cell and nothing can
+	  enter one.
+
+	  This reserves the upper half of the uid and gid space for the
+	  kernel to hand out to cells: with it enabled no file on a filesystem
+	  of the host can be given to an id from 2147483648 to 4294901759.
+
+	  If unsure, say N.
+
 config PID_NS
 	bool "PID Namespaces"
 	default y
