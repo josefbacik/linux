@@ -73,10 +73,74 @@ static int cell_set_root(struct cell *cell, struct file *file)
 	return 0;
 }
 
+/*
+ * The network is set up from the outside and handed to the cell, as the tree is.
+ * So a network namespace that is made for a cell belongs to the user namespace
+ * the cell was made in, as its mount namespace does, and no capability of a task
+ * of the cell is good for anything in it. Nothing is done to it here: until
+ * somebody sets it up there is a loopback device that is down.
+ */
+static int cell_make_net(struct cell *cell, struct user_namespace *owner)
+{
+	struct net *net;
+
+	if (cell->net)
+		return 0;
+	net = copy_net_ns(CLONE_NEWNET, owner, current->nsproxy->net_ns);
+	if (IS_ERR(net))
+		return PTR_ERR(net);
+	cell->net = net;
+	return 0;
+}
+
+/*
+ * "new": one that is made for the cell, for whoever builds the cell to set up.
+ * "own": one that the cell owns. Its root has every capability over it, so the
+ * cell sets up its network by itself. That has to be asked for.
+ */
+static int cell_set_net_string(struct cell *cell, const char *val)
+{
+	struct user_namespace *owner;
+
+	if (!strcmp(val, "new"))
+		owner = cell->user_ns->parent;
+	else if (!strcmp(val, "own"))
+		owner = cell->user_ns;
+	else
+		return -EINVAL;
+	if (cell->net)
+		return -EBUSY;
+	return cell_make_net(cell, owner);
+}
+
+/*
+ * A network namespace to share. A file descriptor on one is no authority over
+ * it, so it takes CAP_SYS_ADMIN over its owner. That is half of what setns()
+ * asks for. The other half is about the namespaces of the caller, which do not
+ * change here. And it is not one that another cell owns, whose tasks have every
+ * capability over it. In whatever state that cell is: a slot outlives it.
+ */
+static int cell_set_net(struct cell *cell, struct file *file)
+{
+	struct ns_common *ns = cell_ns_from_file(file, CLONE_NEWNET);
+
+	if (IS_ERR(ns))
+		return PTR_ERR(ns);
+	if (cell->net)
+		return -EBUSY;
+	if (!ns_capable(to_net_ns(ns)->user_ns, CAP_SYS_ADMIN) ||
+	    userns_is_cell(to_net_ns(ns)->user_ns))
+		return -EPERM;
+	cell->net = get_net(to_net_ns(ns));
+	return 0;
+}
+
 static int cell_set_string(struct cell *cell, const char *key, const char *val)
 {
 	if (!strcmp(key, "hostname"))
 		return cell_set_hostname(cell, val);
+	if (!strcmp(key, "net"))
+		return cell_set_net_string(cell, val);
 	return -EINVAL;
 }
 
@@ -92,6 +156,8 @@ static int cell_set_fd(struct cell *cell, const char *key, struct file *file)
 		return cell_set_budget(cell, file);
 	if (!strcmp(key, "root"))
 		return cell_set_root(cell, file);
+	if (!strcmp(key, "net"))
+		return cell_set_net(cell, file);
 	return -EINVAL;
 }
 
