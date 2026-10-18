@@ -38,3 +38,30 @@ bool cell_ns_may_enter(const struct ns_common *ns,
 	return ns->ns_type == CLONE_NEWNET &&
 	       READ_ONCE(cell->state) == CELL_BUILDING;
 }
+
+/**
+ * cell_may_migrate - may a task be moved to a cgroup?
+ * @task: the task
+ * @dst:  the cgroup
+ *
+ * A task of a cell stays within the budget of the cell, whoever asks. On a
+ * hierarchy other than that of the budget no request moves it from where it was
+ * born. This is asked for every request. It is not asked when the kernel itself
+ * empties a legacy cpuset that lost its last cpu, see cgroup_transfer_tasks(),
+ * which works on legacy hierarchies only and so never touches a budget.
+ *
+ * Return: true if @task is in no cell, or @dst is the budget of its cell or
+ * lies below it.
+ */
+bool cell_may_migrate(struct task_struct *task, struct cgroup *dst)
+{
+	struct cgroup *budget;
+	struct cell *cell;
+
+	guard(rcu)();
+	cell = task_cell(task);
+	if (!cell)
+		return true;
+	budget = READ_ONCE(cell->budget);
+	return budget && cgroup_is_descendant(dst, budget);
+}
