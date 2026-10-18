@@ -4904,6 +4904,14 @@ static int do_open(struct nameidata *nd,
 		mnt_drop_write(mnt);
 		mntput(mnt);
 	}
+	/*
+	 * Nothing a cell writes imparts privilege. Here, like the truncation,
+	 * because it changes the inode: the lock of the directory has been
+	 * dropped, which is not so in ->atomic_open().
+	 */
+	if (!error && unlikely(current_cell()) &&
+	    (file->f_mode & (FMODE_WRITE | FMODE_CREATED)) == FMODE_WRITE)
+		error = cell_file_drop_privs(file);
 	return error;
 }
 
