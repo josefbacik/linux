@@ -276,4 +276,32 @@ struct user_namespace *cell_idmap_userns(const struct file *file);
 static inline struct user_namespace *cell_idmap_userns(const struct file *f) { return NULL; }
 #endif
 
+/* Nothing a cell writes imparts privilege: new files and new modes. */
+
+/**
+ * cell_strip_setid - take from a mode what a task of a cell may not set
+ * @mode: a file mode, file type included
+ *
+ * Nothing a cell runs can gain from a file, since every task of a cell has
+ * no_new_privs. This is the other half: nothing a cell writes can make anybody
+ * else gain. The ids of a cell commonly map to on-disk ids from 0 up, so a
+ * set-uid bit set from the inside would make a set-uid root file for whoever
+ * else looks at that filesystem.
+ *
+ * The bits are dropped, not refused, as setattr_prepare() drops S_ISGID for a
+ * caller that is not in the group of the file: unpacking an archive keeps
+ * working. On a directory S_ISGID is about inheritance and stays.
+ *
+ * Return: @mode, without S_ISUID and S_ISGID if the caller is in a cell.
+ */
+static inline umode_t cell_strip_setid(umode_t mode)
+{
+	if (likely(!(mode & (S_ISUID | S_ISGID))) || !current_cell())
+		return mode;
+	mode &= ~S_ISUID;
+	if (!S_ISDIR(mode))
+		mode &= ~S_ISGID;
+	return mode;
+}
+
 #endif /* _LINUX_CELL_H */

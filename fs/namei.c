@@ -16,6 +16,7 @@
  */
 
 #include <linux/init.h>
+#include <linux/cell.h>
 #include <linux/export.h>
 #include <linux/slab.h>
 #include <linux/wordpart.h>
@@ -4204,7 +4205,7 @@ static inline umode_t vfs_prepare_mode(const struct mnt_idmap *idmap,
 	mode &= (mask_perms & ~S_IFMT);
 	mode |= (type & S_IFMT);
 
-	return mode;
+	return cell_strip_setid(mode);
 }
 
 /**
