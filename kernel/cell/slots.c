@@ -158,6 +158,86 @@ static int cell_set_fd(struct cell *cell, const char *key, struct file *file)
 	return -EINVAL;
 }
 
+static int cell_make_pid_ns(struct cell *cell)
+{
+	struct pid_namespace *ns;
+
+	if (cell->pid_ns)
+		return 0;
+	ns = copy_pid_ns(CLONE_NEWPID, cell->user_ns, task_active_pid_ns(current));
+	if (IS_ERR(ns))
+		return PTR_ERR(ns);
+	cell->pid_ns = ns;
+	return 0;
+}
+
+/*
+ * Everything that can fail comes before the mount namespace, which is changed
+ * in place and cannot be changed back. If it fails the cell is still BUILDING.
+ * What was filled in for slots that were left empty stays filled in.
+ */
+static int cell_seal(struct cell *cell)
+{
+	struct cgroup_namespace *cgroup_ns;
+	struct nsproxy *nsproxy;
+	kuid_t root_uid;
+	kgid_t root_gid;
+	int ret;
+
+	if (!cell->budget || !cell->mnt_ns)
+		return -EINVAL;
+
+	if (!cell->ids_count) {
+		ret = cell_set_ids(cell, 1);
+		if (ret)
+			return ret;
+	}
+	ret = cell_make_pid_ns(cell);
+	if (ret)
+		return ret;
+	ret = cell_make_net(cell);
+	if (ret)
+		return ret;
+
+	cgroup_ns = cgroup_cell_ns(cell->user_ns, cell->budget);
+	if (IS_ERR(cgroup_ns))
+		return PTR_ERR(cgroup_ns);
+
+	nsproxy = cell_create_nsproxy(cell->user_ns, cell->mnt_ns, cell->pid_ns,
+				      cell->net, cgroup_ns, cell->hostname);
+	put_cgroup_ns(cgroup_ns);
+	if (IS_ERR(nsproxy))
+		return PTR_ERR(nsproxy);
+
+	/* The builder cannot name the cell's ids, so it cannot do this. */
+	if (cell->ids_count == 1) {
+		root_uid = cell->user_ns->owner;
+		root_gid = cell->user_ns->group;
+	} else {
+		root_uid = make_kuid(cell->user_ns, 0);
+		root_gid = make_kgid(cell->user_ns, 0);
+	}
+	ret = cgroup_cell_chown(cell->budget, root_uid, root_gid);
+	if (ret)
+		goto out_chown;
+
+	/* Two references: the slot's and the nsproxy's. */
+	ret = mnt_ns_seal_for_cell(cell->mnt_ns, 2, cell->user_ns,
+				   cell->ids_count > 1, &cell->root);
+	if (ret)
+		goto out_chown;
+
+	cell->nsproxy = nsproxy;
+	cell->sealed = true;
+	WRITE_ONCE(cell->state, CELL_SEALED);
+	return 0;
+
+out_chown:
+	cgroup_cell_chown(cell->budget, cell->budget_uid, cell->budget_gid);
+	put_nsproxy(nsproxy);
+	return ret;
+}
+
 /**
  * sys_cell_configure - change a cell
  * @cfd:    a cellfd
@@ -205,6 +285,10 @@ SYSCALL_DEFINE5(cell_configure, int, cfd, unsigned int, cmd,
 		if (!ukey || uvalue || aux < 0)
 			return -EINVAL;
 		break;
+	case CELL_CMD_SEAL:
+		if (ukey || uvalue || aux)
+			return -EINVAL;
+		break;
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -243,6 +327,8 @@ SYSCALL_DEFINE5(cell_configure, int, cfd, unsigned int, cmd,
 			return -EBADF;
 		return cell_set_fd(cell, key, fd_file(slot));
 	}
+	case CELL_CMD_SEAL:
+		return cell_seal(cell);
 	}
 	return -EOPNOTSUPP;
 }
