@@ -93,6 +93,9 @@ static const struct ctl_table user_table[] = {
 #if IS_ENABLED(CONFIG_BINFMT_MISC)
 	UCOUNT_ENTRY("max_binfmt_misc_interpreters"),
 #endif
+#ifdef CONFIG_CELLS
+	UCOUNT_ENTRY("max_cell_id_blocks"),
+#endif
 };
 #endif /* CONFIG_SYSCTL */
 
