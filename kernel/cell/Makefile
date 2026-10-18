@@ -1,3 +1,4 @@
 # SPDX-License-Identifier: GPL-2.0-only
 obj-y += core.o
 obj-y += slots.o
+obj-y += ids.o

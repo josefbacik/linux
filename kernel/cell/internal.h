@@ -71,4 +71,7 @@ static inline bool cell_may_spawn(void)
 /* core.c */
 void cell_kill(struct cell *cell);
 
+/* ids.c */
+int cell_set_ids(struct cell *cell, u32 count);
+
 #endif /* _KERNEL_CELL_INTERNAL_H */

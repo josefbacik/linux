@@ -116,6 +116,18 @@ static int cell_set_net(struct cell *cell, struct file *file)
 	return 0;
 }
 
+static int cell_set_ids_binary(struct cell *cell, const void __user *uvalue,
+			       size_t len)
+{
+	u32 count;
+
+	if (len != sizeof(count))
+		return -EINVAL;
+	if (copy_from_user(&count, uvalue, sizeof(count)))
+		return -EFAULT;
+	return cell_set_ids(cell, count);
+}
+
 static int cell_set_string(struct cell *cell, const char *key, const char *val)
 {
 	if (!strcmp(key, "hostname"))
@@ -128,6 +140,8 @@ static int cell_set_string(struct cell *cell, const char *key, const char *val)
 static int cell_set_binary(struct cell *cell, const char *key,
 			   const void __user *uvalue, size_t len)
 {
+	if (!strcmp(key, "ids"))
+		return cell_set_ids_binary(cell, uvalue, len);
 	return -EINVAL;
 }
 
