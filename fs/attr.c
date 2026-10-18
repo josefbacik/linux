@@ -7,6 +7,7 @@
  */
 
 #include <linux/export.h>
+#include <linux/cell.h>
 #include <linux/time.h>
 #include <linux/mm.h>
 #include <linux/string.h>
@@ -456,6 +457,10 @@ int notify_change(const struct mnt_idmap *idmap, struct dentry *dentry,
 		 */
 		if (S_ISLNK(inode->i_mode))
 			return -EOPNOTSUPP;
+
+		/* Nothing a cell writes imparts privilege. */
+		attr->ia_mode = cell_strip_setid((attr->ia_mode & ~S_IFMT) |
+						 (inode->i_mode & S_IFMT));
 
 		/* Flag setting protected by i_rwsem */
 		if (is_sxid(attr->ia_mode))
