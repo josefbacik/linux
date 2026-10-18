@@ -2,6 +2,7 @@
 
 #include <kunit/visibility.h>
 #include <linux/export.h>
+#include <linux/cell.h>
 #include <linux/nsproxy.h>
 #include <linux/slab.h>
 #include <linux/sched/signal.h>
@@ -61,6 +62,21 @@ static void set_cred_user_ns(struct cred *cred, struct user_namespace *user_ns)
 	cred->user_ns = user_ns;
 }
 
+#ifdef CONFIG_CELLS
+/**
+ * userns_is_cell - is this the user namespace of a cell?
+ * @ns: a user namespace
+ *
+ * Out of line for the headers that cannot see into struct user_namespace.
+ *
+ * Return: true if it is, false for a legacy user namespace.
+ */
+bool userns_is_cell(const struct user_namespace *ns)
+{
+	return ns->cell;
+}
+#endif
+
 static unsigned long enforced_nproc_rlimit(void)
 {
 	unsigned long limit = RLIM_INFINITY;
@@ -80,8 +96,10 @@ static unsigned long enforced_nproc_rlimit(void)
  *
  * This is called by copy_creds(), which will finish setting the target task's
  * credentials.
+ *
+ * @cell is the cell the namespace is made for, or NULL for a legacy one.
  */
-int create_user_ns(struct cred *new)
+static int __create_user_ns(struct cred *new, struct cell *cell)
 {
 	struct user_namespace *ns, *parent_ns = new->user_ns;
 	kuid_t owner = new->euid;
@@ -159,6 +177,11 @@ int create_user_ns(struct cred *new)
 	if (!setup_userns_sysctls(ns))
 		goto fail_keyring;
 
+#ifdef CONFIG_CELLS
+	/* Before anybody can find it. */
+	if (cell)
+		ns->cell = cell_get(cell);
+#endif
 	set_cred_user_ns(new, ns);
 	ns_tree_add(ns);
 	return 0;
@@ -171,6 +194,34 @@ fail_dec:
 fail:
 	return ret;
 }
+
+/**
+ * create_user_ns - create a new, legacy, user namespace
+ * @new: the credentials to derive the creator from, and to put into it
+ *
+ * Return: 0 or a negative error.
+ */
+int create_user_ns(struct cred *new)
+{
+	return __create_user_ns(new, NULL);
+}
+
+#ifdef CONFIG_CELLS
+/**
+ * create_cell_user_ns - create the user namespace of a cell
+ * @new:  a scratch credential, as for create_user_ns()
+ * @cell: the cell
+ *
+ * The namespace holds a reference on @cell for as long as it lives, and knows
+ * its cell before anybody can find it.
+ *
+ * Return: 0 or a negative error.
+ */
+int create_cell_user_ns(struct cred *new, struct cell *cell)
+{
+	return __create_user_ns(new, cell);
+}
+#endif
 
 int unshare_userns(unsigned long unshare_flags, struct cred **new_cred)
 {
@@ -218,6 +269,9 @@ static void free_user_ns(struct work_struct *work)
 #endif
 		retire_userns_sysctls(ns);
 		key_free_user_ns(ns);
+#ifdef CONFIG_CELLS
+		cell_put(ns->cell);
+#endif
 		ns_common_free(ns);
 		/* Concurrent nstree traversal depends on a grace period. */
 		kfree_rcu(ns, ns.ns_rcu);
