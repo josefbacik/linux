@@ -337,3 +337,77 @@ SYSCALL_DEFINE2(cell_kill, int, cfd, unsigned int, flags)
 	cell_kill(cell);
 	return 0;
 }
+
+#define CELL_INFO_SUPPORTED	(CELL_INFO_ID | CELL_INFO_STATE | CELL_INFO_EXIT | \
+				 CELL_INFO_BUDGET | CELL_INFO_IDS)
+
+/**
+ * sys_cell_info - read from a cell
+ * @cfd:   a cellfd, or CELL_SELF, which tells a task the id of its own cell
+ * @uinfo: where to return it. Only @uinfo->mask is read
+ * @usize: the size of *@uinfo as the caller knows it
+ * @flags: none yet, must be 0
+ *
+ * Fills in what @uinfo->mask asks for and the kernel has, and says in the mask
+ * what that was. @uinfo->supported_mask is everything this kernel knows of.
+ *
+ * Return: 0 or a negative error.
+ */
+SYSCALL_DEFINE4(cell_info, int, cfd, struct cell_info __user *, uinfo,
+		size_t, usize, unsigned int, flags)
+{
+	struct cell_info info = {};
+	struct cell *cell;
+	u64 want;
+
+	BUILD_BUG_ON(sizeof(struct cell_info) != CELL_INFO_SIZE_VER0);
+
+	if (flags)
+		return -EINVAL;
+	if (usize < CELL_INFO_SIZE_VER0)
+		return -EINVAL;
+	/* Only the mask goes in. The rest of the struct is the kernel's to fill. */
+	if (get_user(want, &uinfo->mask))
+		return -EFAULT;
+	info.supported_mask = CELL_INFO_SUPPORTED;
+
+	if (cfd == CELL_SELF) {
+		/* A name, and nothing that a handle would be needed for. */
+		info.id = current_cell_id();
+		info.mask = want & CELL_INFO_ID;
+		return copy_struct_to_user(uinfo, usize, &info, sizeof(info), NULL);
+	}
+
+	CLASS(fd, f)(cfd);
+	cell = cell_from_fd(&f);
+	if (IS_ERR(cell))
+		return PTR_ERR(cell);
+
+	scoped_guard(mutex, &cell->lock) {
+		if (want & CELL_INFO_ID) {
+			info.id = cell->id;
+			/* Cells do not nest yet. */
+			info.parent_id = 0;
+			info.mask |= CELL_INFO_ID;
+		}
+		if (want & CELL_INFO_STATE) {
+			info.state = cell->state;
+			/* There are none yet. */
+			info.flags = 0;
+			info.mask |= CELL_INFO_STATE;
+		}
+		if ((want & CELL_INFO_EXIT) && cell->state == CELL_DEAD) {
+			info.exit_status = cell->exit_status;
+			info.mask |= CELL_INFO_EXIT;
+		}
+		if ((want & CELL_INFO_BUDGET) && cell->budget_id) {
+			info.budget_cgroupid = cell->budget_id;
+			info.mask |= CELL_INFO_BUDGET;
+		}
+		if ((want & CELL_INFO_IDS) && cell->ids_count) {
+			info.ids_count = cell->ids_count;
+			info.mask |= CELL_INFO_IDS;
+		}
+	}
+	return copy_struct_to_user(uinfo, usize, &info, sizeof(info), NULL);
+}
