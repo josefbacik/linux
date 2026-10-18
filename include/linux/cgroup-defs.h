@@ -72,6 +72,9 @@ enum {
 
 	/* Cgroup is frozen. */
 	CGRP_FROZEN,
+
+	/* Cgroup is the budget of a cell. */
+	CGRP_CELL_BUDGET,
 };
 
 /* cgroup_root->flags */
