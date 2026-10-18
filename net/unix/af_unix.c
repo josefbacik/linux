@@ -78,6 +78,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/bpf-cgroup.h>
+#include <linux/cell.h>
 #include <linux/btf_ids.h>
 #include <linux/dcache.h>
 #include <linux/errno.h>
@@ -796,6 +797,37 @@ static void copy_peercred(struct sock *sk, struct sock *peersk)
 	sk->sk_peer_cred = get_cred(peersk->sk_peer_cred);
 	spin_unlock(&sk->sk_peer_lock);
 }
+
+/*
+ * Between cells a socket carries bytes and nothing else: no file, no
+ * credential, no pidfd, no label.
+ *
+ * The rule is enforced where ancillary data is received, and it keeps no state:
+ * every message says which cell it was sent from, and whoever receives it gets
+ * the ancillary data only if that is its own cell. However a socket came to
+ * span two cells, by a connect() through a tree both can see or by being given
+ * to a new task, there is nothing to forget to mark.
+ */
+#ifdef CONFIG_CELLS
+static inline void unix_skb_set_cell(struct sk_buff *skb)
+{
+	UNIXCB(skb).cell_id = current_cell_id();
+}
+
+static inline u64 unix_skb_cell(const struct sk_buff *skb)
+{
+	return UNIXCB(skb).cell_id;
+}
+
+static inline bool unix_skb_foreign(const struct sk_buff *skb)
+{
+	return unix_skb_cell(skb) != current_cell_id();
+}
+#else
+static inline void unix_skb_set_cell(struct sk_buff *skb) { }
+static inline u64 unix_skb_cell(const struct sk_buff *skb) { return 0; }
+static inline bool unix_skb_foreign(const struct sk_buff *skb) { return false; }
+#endif
 
 static bool unix_may_passcred(const struct sock *sk)
 {
@@ -1993,6 +2025,7 @@ static int unix_scm_to_skb(struct scm_cookie *scm, struct sk_buff *skb, bool sen
 	UNIXCB(skb).uid = scm->creds.uid;
 	UNIXCB(skb).gid = scm->creds.gid;
 	UNIXCB(skb).fp = NULL;
+	unix_skb_set_cell(skb);
 	unix_get_secdata(scm, skb);
 	if (scm->fp && send_fds)
 		err = unix_attach_fds(scm, skb);
@@ -2670,7 +2703,10 @@ int __unix_dgram_recvmsg(struct sock *sk, struct msghdr *msg, size_t size,
 	}
 	err = (flags & MSG_TRUNC) ? skb->len - skip : size;
 
-	scm_recv_unix(sock, msg, &scm, flags);
+	if (unix_skb_foreign(skb))
+		scm_destroy(&scm);
+	else
+		scm_recv_unix(sock, msg, &scm, flags);
 
 out_free:
 	skb_free_datagram(sk, skb);
@@ -2929,6 +2965,8 @@ static int unix_stream_read_generic(struct unix_stream_read_state *state,
 	size_t size = state->size;
 	int flags = state->flags;
 	bool check_creds = false;
+	bool foreign = false, glued = false;
+	u64 from = 0;
 	struct scm_cookie scm;
 	struct unix_sock *u;
 	int copied = 0;
@@ -3032,6 +3070,18 @@ unlock:
 
 		unix_state_unlock(sk);
 
+		/*
+		 * Never glue messages from different cells: what comes with
+		 * one is not to be lost, or let through, on account of another.
+		 */
+		if (!glued) {
+			glued = true;
+			from = unix_skb_cell(skb);
+			foreign = unix_skb_foreign(skb);
+		} else if (unix_skb_cell(skb) != from) {
+			break;
+		}
+
 		if (check_creds) {
 			/* Never glue messages from different writers */
 			if (!unix_skb_scm_eq(sk, skb, &scm))
@@ -3113,7 +3163,10 @@ unlock:
 	if (msg) {
 		bool do_cmsg = READ_ONCE(u->recvmsg_inq);
 
-		scm_recv_unix(sock, msg, &scm, flags);
+		if (foreign)
+			scm_destroy(&scm);
+		else
+			scm_recv_unix(sock, msg, &scm, flags);
 
 		if ((do_cmsg | msg->msg_get_inq) && (copied ?: err) >= 0) {
 			msg->msg_inq = READ_ONCE(u->inq_len);

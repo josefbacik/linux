@@ -13,13 +13,19 @@ struct sock *unix_peer_get(struct sock *sk);
 
 struct unix_skb_parms {
 	DECLARE_PIDS(pid, PIDTYPE_TGID);	/* skb credentials by pid type */
-	kuid_t			uid;
-	kgid_t			gid;
 	struct scm_fp_list	*fp;		/* Passed files		*/
-#ifdef CONFIG_SECURITY_NETWORK
-	u32			secid;		/* Security ID		*/
+#ifdef CONFIG_CELLS
+	u64			cell_id;	/* of the cell it was sent from */
 #endif
-	u32			consumed;
+	/* This fills skb->cb to the last byte. Keep the small ones together. */
+	struct {
+		kuid_t		uid;
+		kgid_t		gid;
+#ifdef CONFIG_SECURITY_NETWORK
+		u32		secid;		/* Security ID		*/
+#endif
+		u32		consumed;
+	};
 } __randomize_layout;
 
 #define UNIXCB(skb)	(*(struct unix_skb_parms *)&((skb)->cb))
