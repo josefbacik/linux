@@ -269,4 +269,11 @@ bool cell_no_net(void);
 static inline bool cell_no_net(void) { return false; }
 #endif
 
+/* A mount is idmapped for a cell. */
+#ifdef CONFIG_CELLS
+struct user_namespace *cell_idmap_userns(const struct file *file);
+#else
+static inline struct user_namespace *cell_idmap_userns(const struct file *f) { return NULL; }
+#endif
+
 #endif /* _LINUX_CELL_H */
