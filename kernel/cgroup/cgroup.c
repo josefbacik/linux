@@ -6983,6 +6983,87 @@ static void cgroup_css_set_put_fork(struct kernel_clone_args *kargs)
 	}
 }
 
+#ifdef CONFIG_CELLS
+/**
+ * cgroup_cell_budget_get - take a cgroup as the budget of a cell
+ * @file: a cgroup2 directory
+ * @uid:  returns who owns it now
+ * @gid:  likewise
+ *
+ * From here on holding the cellfd is all it takes to put a task into the
+ * cgroup, and sealing the cell hands the cgroup to the cell's root. So whoever
+ * fills the slot must be allowed both: everything moving a task of its own
+ * there would take, and ownership of the directory.
+ *
+ * Killing the cell kills everything in the cgroup. So it must be empty, have no
+ * children, and neither be nor lie within the budget of another cell.
+ *
+ * Return: the cgroup, marked as a budget and with a reference, both for
+ * cgroup_cell_budget_put() to undo, or an ERR_PTR(). Among the errors are
+ * -EBADF if @file is no cgroup2 directory, -EPERM or -EACCES if the caller may
+ * not, -EBUSY if the cgroup will not do and -ENODEV if it is dead.
+ */
+struct cgroup *cgroup_cell_budget_get(struct file *file, kuid_t *uid, kgid_t *gid)
+{
+	struct super_block *sb = file->f_path.dentry->d_sb;
+	struct cgroup *cgrp, *anc;
+	struct css_set *cset;
+	struct kstat stat;
+	int ret;
+
+	cgrp = cgroup_get_from_file(file);
+	if (IS_ERR(cgrp))
+		return cgrp;
+
+	/* Also brings the inode up to date with the kernfs node. */
+	ret = vfs_getattr_nosec(&file->f_path, &stat, STATX_UID | STATX_GID, 0);
+	if (ret) {
+		cgroup_put(cgrp);
+		return ERR_PTR(ret);
+	}
+
+	cgroup_lock();
+
+	spin_lock_irq(&css_set_lock);
+	cset = task_css_set(current);
+	get_css_set(cset);
+	spin_unlock_irq(&css_set_lock);
+
+	ret = -ENODEV;
+	if (cgroup_is_dead(cgrp))
+		goto out;
+	ret = -EPERM;
+	if (!inode_owner_or_capable(&nop_mnt_idmap, file_inode(file)))
+		goto out;
+	ret = cgroup_may_write(cgrp, sb);
+	if (ret)
+		goto out;
+	ret = cgroup_attach_permissions(cset->dfl_cgrp, cgrp, sb, true,
+					current->nsproxy->cgroup_ns);
+	if (ret)
+		goto out;
+	ret = -EBUSY;
+	if (cgroup_is_populated(cgrp) || css_has_online_children(&cgrp->self))
+		goto out;
+	for (anc = cgrp; anc; anc = cgroup_parent(anc))
+		if (test_bit(CGRP_CELL_BUDGET, &anc->flags))
+			goto out;
+
+	set_bit(CGRP_CELL_BUDGET, &cgrp->flags);
+	*uid = stat.uid;
+	*gid = stat.gid;
+	ret = 0;
+out:
+	put_css_set(cset);
+	cgroup_unlock();
+	if (ret) {
+		cgroup_put(cgrp);
+		return ERR_PTR(ret);
+	}
+	return cgrp;
+}
+#endif /* CONFIG_CELLS */
+
 /**
  * cgroup_can_fork - called on a new task before the process is exposed
  * @child: the child process
