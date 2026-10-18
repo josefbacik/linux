@@ -14,6 +14,7 @@
 
 #if IS_ENABLED(CONFIG_UNIX)
 struct unix_sock *unix_get_socket(struct file *filp);
+void unix_file_cross_cell(struct file *file, u64 cell_id);
 #else
 static inline struct unix_sock *unix_get_socket(struct file *filp)
 {
@@ -50,6 +51,9 @@ struct unix_sock {
 	int			inq_len;
 	bool			recvmsg_inq;
 	bool			scm_rights_notrunc;
+#ifdef CONFIG_CELLS
+	u64			cell_id;	/* of the cell that holds it */
+#endif
 #if IS_ENABLED(CONFIG_AF_UNIX_OOB)
 	struct sk_buff		*oob_skb;
 #endif

@@ -69,6 +69,8 @@ struct embryo {
 	kuid_t			uid;
 	kgid_t			gid;
 	struct group_info	*groups;
+
+	u64			cell_id;	/* of the cell it is in */
 	struct user_namespace	*user_ns;	/* likewise */
 
 	int			result;
@@ -115,6 +117,19 @@ static int embryo_install_fds(struct embryo *e)
 			return ret;
 	}
 	return 0;
+}
+
+/*
+ * The exec went through, so these ends are the cell's from here on. Not any
+ * earlier: a socket that was to go to a task which never started stays with
+ * whoever has it.
+ */
+static void embryo_fds_crossed(struct embryo *e)
+{
+	unsigned int i;
+
+	for (i = 0; i < e->nr_fds; i++)
+		unix_file_cross_cell(e->fds[i].file, e->cell_id);
 }
 
 static void embryo_put(struct embryo *e)
@@ -226,6 +241,8 @@ static int embryo_main(void *arg)
 
 	/* @started is set, so nobody changes anything any more. */
 	ret = embryo_exec(e);
+	if (!ret)
+		embryo_fds_crossed(e);
 	/*
 	 * A signal to the embryo is no signal to whoever started it. Whatever
 	 * interrupted the exec, the embryo is about to be killed.
@@ -285,6 +302,7 @@ int embryo_fork_prepare(struct kernel_clone_args *args)
 		kfree(e);
 		return ret;
 	}
+	e->cell_id = cell_id(args->cell);
 	e->user_ns = get_user_ns(cell_user_ns(args->cell));
 
 	args->embryo = e;
