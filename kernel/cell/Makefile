@@ -2,3 +2,4 @@
 obj-y += core.o
 obj-y += slots.o
 obj-y += ids.o
+obj-y += spawn.o

@@ -198,6 +198,7 @@ int create_cell_user_ns(struct cred *new, struct cell *cell);
 int userns_set_cell_map(struct user_namespace *ns, u32 uid, u32 kuid,
 			u32 gid, u32 kgid, u32 count, u32 block,
 			struct ucounts *ucounts);
+void userns_enter_cell(struct cred *cred, struct user_namespace *ns);
 void userns_retire_cell_block(struct user_namespace *ns);
 #endif
 extern int unshare_userns(unsigned long unshare_flags, struct cred **new_cred);

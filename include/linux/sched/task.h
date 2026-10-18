@@ -20,6 +20,7 @@ struct css_set;
 /* All the bits taken by the old clone syscall. */
 #define CLONE_LEGACY_FLAGS 0xffffffffULL
 
+struct cell;
 struct kernel_clone_args {
 	u64 flags;
 	int __user *pidfd;
@@ -45,6 +46,8 @@ struct kernel_clone_args {
 	struct cgroup *cgrp;
 	struct css_set *cset;
 	unsigned int kill_seq;
+	int cell_fd;
+	struct cell *cell;
 };
 
 /*

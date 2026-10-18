@@ -161,4 +161,22 @@ struct cell *cell_from_file(const struct file *file);
 struct dentry **cell_stashed(struct cell *cell);
 #endif
 
+/* A task is born in a cell. */
+#ifdef CONFIG_CELLS
+int cell_fork_prepare(struct kernel_clone_args *args);
+void cell_fork_finish(struct kernel_clone_args *args);
+void cell_task_spawned(struct cell *cell);
+int cell_copy_creds(struct cred *new, struct cell *cell);
+struct user_namespace *cell_user_ns(struct cell *cell);
+struct nsproxy *cell_nsproxy(struct cell *cell);
+void cell_root(struct cell *cell, struct path *root);
+struct cgroup *cell_budget(struct cell *cell);
+#else
+static inline int cell_copy_creds(struct cred *n, struct cell *c) { return -EINVAL; }
+static inline struct user_namespace *cell_user_ns(struct cell *cell) { return NULL; }
+static inline struct nsproxy *cell_nsproxy(struct cell *cell) { return NULL; }
+static inline void cell_root(struct cell *cell, struct path *root) { }
+static inline struct cgroup *cell_budget(struct cell *cell) { return NULL; }
+#endif
+
 #endif /* _LINUX_CELL_H */
