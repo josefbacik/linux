@@ -107,5 +107,6 @@
 #define GUEST_MEMFD_MAGIC	0x474d454d	/* "GMEM" */
 #define NULL_FS_MAGIC		0x4E554C4C	/* "NULL" */
 #define FAIL_FS_MAGIC		0x4641494C	/* "FAIL" */
+#define CELL_FS_MAGIC		0x43454C4C	/* "CELL" */
 
 #endif /* __LINUX_MAGIC_H__ */

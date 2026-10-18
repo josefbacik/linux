@@ -153,4 +153,12 @@ void cell_block_release(u32 block);
 static inline void cell_block_release(u32 block) { }
 #endif
 
+/* The cellfd. */
+#ifdef CONFIG_CELLS
+extern const struct file_operations cell_file_operations;
+struct file *cellfs_alloc_file(struct cell *cell);
+struct cell *cell_from_file(const struct file *file);
+struct dentry **cell_stashed(struct cell *cell);
+#endif
+
 #endif /* _LINUX_CELL_H */
