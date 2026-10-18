@@ -9,6 +9,7 @@
 #include <kunit/test.h>
 #include <linux/cred.h>
 #include <linux/uidgid.h>
+#include <linux/user_namespace.h>
 
 /* Root, since two of the rules know it, and two others. */
 static const uid_t ids[] = { 0, 1000, 1001 };
@@ -31,6 +32,8 @@ static void uid_combination(unsigned int n, struct cred *cred, struct cred *tcre
 {
 	memset(cred, 0, sizeof(*cred));
 	memset(tcred, 0, sizeof(*tcred));
+	cred->user_ns = &init_user_ns;
+	tcred->user_ns = &init_user_ns;
 	set_uids(cred, &n);
 	set_uids(tcred, &n);
 }
@@ -169,6 +172,8 @@ static void cred_ids_control_rule(struct kunit *test)
 	tcred = kunit_kzalloc(test, sizeof(*tcred), GFP_KERNEL);
 	KUNIT_ASSERT_NOT_NULL(test, cred);
 	KUNIT_ASSERT_NOT_NULL(test, tcred);
+	cred->user_ns = &init_user_ns;
+	tcred->user_ns = &init_user_ns;
 
 	for (n = 0; n < NR_CONTROL_COMBINATIONS; n++) {
 		cred->uid    = KUIDT_INIT(1000 + !!(n & BIT(0)));
