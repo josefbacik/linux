@@ -71,6 +71,20 @@ static inline struct cell *current_cell(void)
 }
 
 /**
+ * cell_may_spawn - may the caller make cells and start tasks in them?
+ *
+ * This is the "spawn" slot of the cell the caller acts in. There is nothing to
+ * fill it with yet, so it is always empty, and the host holds everything. That
+ * no cellfd gets into a cell is not what this rests on.
+ *
+ * Return: true if it may.
+ */
+static inline bool cell_may_spawn(void)
+{
+	return !current_cell();
+}
+
+/**
  * task_cell - the cell a task is in
  * @task: a task
  *
@@ -138,6 +152,7 @@ void cell_put(struct cell *cell);
 static inline struct cell *userns_cell(const struct user_namespace *ns) { return NULL; }
 static inline struct cell *cred_cell(const struct cred *cred) { return NULL; }
 static inline struct cell *current_cell(void) { return NULL; }
+static inline bool cell_may_spawn(void) { return true; }
 static inline struct cell *task_cell(const struct task_struct *t) { return NULL; }
 static inline bool cell_same(const struct cred *a, const struct cred *b) { return true; }
 static inline u64 cred_cell_id(const struct cred *cred) { return 0; }
@@ -151,6 +166,14 @@ static inline void cell_put(struct cell *cell) { }
 void cell_block_release(u32 block);
 #else
 static inline void cell_block_release(u32 block) { }
+#endif
+
+/* The cellfd. */
+#ifdef CONFIG_CELLS
+extern const struct file_operations cell_file_operations;
+struct file *cellfs_alloc_file(struct cell *cell);
+struct cell *cell_from_file(const struct file *file);
+struct dentry **cell_stashed(struct cell *cell);
 #endif
 
 #endif /* _LINUX_CELL_H */
