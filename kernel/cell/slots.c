@@ -46,6 +46,33 @@ static int cell_set_budget(struct cell *cell, struct file *file)
 	return 0;
 }
 
+static struct ns_common *cell_ns_from_file(struct file *file, int type)
+{
+	struct ns_common *ns;
+
+	if (!proc_ns_file(file))
+		return ERR_PTR(-EINVAL);
+	ns = get_proc_ns(file_inode(file));
+	if (ns->ns_type != type)
+		return ERR_PTR(-EINVAL);
+	return ns;
+}
+
+/* A mount namespace that nobody has entered, which sealing sees to. */
+static int cell_set_root(struct cell *cell, struct file *file)
+{
+	struct ns_common *ns = cell_ns_from_file(file, CLONE_NEWNS);
+
+	if (IS_ERR(ns))
+		return PTR_ERR(ns);
+	if (cell->mnt_ns)
+		return -EBUSY;
+	if (!mnt_ns_may_claim(ns))
+		return -EPERM;
+	cell->mnt_ns = mnt_ns_get_from_common(ns);
+	return 0;
+}
+
 static int cell_set_string(struct cell *cell, const char *key, const char *val)
 {
 	if (!strcmp(key, "hostname"))
@@ -63,6 +90,8 @@ static int cell_set_fd(struct cell *cell, const char *key, struct file *file)
 {
 	if (!strcmp(key, "budget"))
 		return cell_set_budget(cell, file);
+	if (!strcmp(key, "root"))
+		return cell_set_root(cell, file);
 	return -EINVAL;
 }
 
