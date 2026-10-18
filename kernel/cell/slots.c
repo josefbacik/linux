@@ -31,6 +31,21 @@ static int cell_set_hostname(struct cell *cell, const char *val)
 	return 0;
 }
 
+/* A cgroup2 directory. Judged against whoever fills the slot, here and now. */
+static int cell_set_budget(struct cell *cell, struct file *file)
+{
+	struct cgroup *cgrp;
+
+	if (cell->budget)
+		return -EBUSY;
+	cgrp = cgroup_cell_budget_get(file, &cell->budget_uid, &cell->budget_gid);
+	if (IS_ERR(cgrp))
+		return PTR_ERR(cgrp);
+	cell->budget = cgrp;
+	cell->budget_id = cgroup_id(cgrp);
+	return 0;
+}
+
 static int cell_set_string(struct cell *cell, const char *key, const char *val)
 {
 	if (!strcmp(key, "hostname"))
@@ -46,6 +61,8 @@ static int cell_set_binary(struct cell *cell, const char *key,
 
 static int cell_set_fd(struct cell *cell, const char *key, struct file *file)
 {
+	if (!strcmp(key, "budget"))
+		return cell_set_budget(cell, file);
 	return -EINVAL;
 }
 
