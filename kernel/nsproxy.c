@@ -163,15 +163,30 @@ out_ns:
 	return ERR_PTR(err);
 }
 
-/*
- * called from clone.  This now handles copy for nsproxy and all
- * namespaces therein.
+/**
+ * copy_namespaces - give a new task its namespaces
+ * @flags: the flags of the clone
+ * @tsk:   the new task
+ * @cell:  the cell @tsk is born in, or NULL if it stays where its parent is
+ *
+ * Shares the nsproxy of the parent, or makes a new one with new namespaces for
+ * the CLONE_NEW* in @flags. A task that is born in a cell shares the nsproxy of
+ * the cell.
+ *
+ * Return: 0 or a negative error.
  */
-int copy_namespaces(u64 flags, struct task_struct *tsk)
+int copy_namespaces(u64 flags, struct task_struct *tsk, struct cell *cell)
 {
 	struct nsproxy *old_ns = tsk->nsproxy;
 	struct user_namespace *user_ns = task_cred_xxx(tsk, user_ns);
 	struct nsproxy *new_ns;
+
+	/* Born in a cell: every task of a cell shares the one nsproxy. */
+	if (cell) {
+		tsk->nsproxy = cell_nsproxy(cell);
+		get_nsproxy(tsk->nsproxy);
+		return 0;
+	}
 
 	if (likely(!(flags & (CLONE_NS_ALL & ~CLONE_NEWUSER)))) {
 		if ((flags & CLONE_VM) ||

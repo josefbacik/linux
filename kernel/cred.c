@@ -8,6 +8,7 @@
 #define pr_fmt(fmt) "CRED: " fmt
 
 #include <linux/export.h>
+#include <linux/cell.h>
 #include <linux/cred.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
@@ -251,16 +252,22 @@ struct cred *prepare_exec_creds(void)
 	return new;
 }
 
-/*
- * Copy credentials for the new process created by fork()
+/**
+ * copy_creds - copy credentials for the new process created by fork()
+ * @p:           the new task
+ * @clone_flags: the flags of the clone
+ * @cell:        the cell @p is born in, or NULL if it stays where its parent is
  *
  * We share if we can, but under some circumstances we have to generate a new
  * set.
  *
  * The new process gets the current process's subjective credentials as its
- * objective and subjective credentials
+ * objective and subjective credentials. One that is born in a cell gets
+ * credentials of that cell instead, see cell_copy_creds().
+ *
+ * Return: 0 or a negative error.
  */
-int copy_creds(struct task_struct *p, u64 clone_flags)
+int copy_creds(struct task_struct *p, u64 clone_flags, struct cell *cell)
 {
 	struct cred *new;
 	int ret;
@@ -292,6 +299,12 @@ int copy_creds(struct task_struct *p, u64 clone_flags)
 		if (ret < 0)
 			goto error_put;
 		ret = set_cred_ucounts(new);
+		if (ret < 0)
+			goto error_put;
+	}
+
+	if (cell) {
+		ret = cell_copy_creds(new, cell);
 		if (ret < 0)
 			goto error_put;
 	}
