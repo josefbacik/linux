@@ -4,6 +4,7 @@
  * (C) 1999 Andrea Arcangeli <andrea@suse.de> (dynamic inode allocation)
  */
 #include <linux/export.h>
+#include <linux/cell.h>
 #include <linux/fs.h>
 #include <linux/filelock.h>
 #include <linux/mm.h>
@@ -2367,6 +2368,66 @@ static int __remove_privs(const struct mnt_idmap *idmap,
 	 */
 	return notify_change(idmap, dentry, &newattrs, NULL);
 }
+
+#ifdef CONFIG_CELLS
+static int cell_privs_to_kill(struct dentry *dentry)
+{
+	umode_t mode = d_inode(dentry)->i_mode;
+	int kill = 0, ret;
+
+	if (mode & S_ISUID)
+		kill |= ATTR_KILL_SUID;
+	if (mode & S_ISGID)
+		kill |= ATTR_KILL_SGID;
+	ret = security_inode_need_killpriv(dentry);
+	if (ret < 0)
+		return ret;
+	if (ret)
+		kill |= ATTR_KILL_PRIV;
+	return kill;
+}
+
+/**
+ * cell_file_drop_privs - a task of a cell is about to be able to write @file
+ * @file: a file open for writing
+ *
+ * Nothing a cell writes imparts privilege. A write() drops the set-id bits and
+ * the file capabilities of what it writes to, a store through a shared mapping
+ * does not. So for a cell they go as soon as the file can be written at all,
+ * and they all go, whatever capabilities the caller has.
+ *
+ * This changes the inode, so the caller must hold no inode lock and no write
+ * access to the superblock. It waits for a frozen filesystem, but only if there
+ * is something to drop.
+ *
+ * Return: 0 or a negative error, in which case @file must not be handed out.
+ */
+int cell_file_drop_privs(struct file *file)
+{
+	struct dentry *dentry = file_dentry(file);
+	struct inode *inode = file_inode(file);
+	int kill;
+
+	if (!S_ISREG(inode->i_mode) || IS_NOSEC(inode))
+		return 0;
+
+	/* A look without the lock, as do_truncate() takes one. */
+	kill = cell_privs_to_kill(dentry);
+	if (kill <= 0)
+		return kill;
+
+	kill = mnt_want_write_file(file);
+	if (kill)
+		return kill;
+	inode_lock(inode);
+	kill = cell_privs_to_kill(dentry);
+	if (kill > 0)
+		kill = __remove_privs(file_mnt_idmap(file), dentry, kill);
+	inode_unlock(inode);
+	mnt_drop_write_file(file);
+	return kill;
+}
+#endif
 
 static int file_remove_privs_flags(struct file *file, unsigned int flags)
 {
