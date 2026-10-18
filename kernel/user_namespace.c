@@ -75,6 +75,71 @@ bool userns_is_cell(const struct user_namespace *ns)
 {
 	return ns->cell;
 }
+
+/**
+ * userns_set_cell_map - give the user namespace of a cell its one and only map
+ * @ns:      the user namespace of a cell, which has no map yet
+ * @uid:     the first uid as seen from the inside
+ * @kuid:    the kuid that is
+ * @gid:     the first gid as seen from the inside
+ * @kgid:    the kgid that is
+ * @count:   how many of each
+ * @block:   the number of the block the ids are from plus 1, or 0 for none
+ * @ucounts: what the block was charged to, or NULL
+ *
+ * The kernel chose the ids, so none of what map_write() has to ask about the
+ * writer applies. With a single gid there are no groups to be dropped or taken
+ * up, so setgroups() is denied for good.
+ *
+ * @ns takes over @block and @ucounts and gives them back when it is freed.
+ *
+ * Return: 0, -EBUSY if @ns has a map, -EINVAL if @uid or @gid is not an id.
+ */
+int userns_set_cell_map(struct user_namespace *ns, u32 uid, u32 kuid,
+			u32 gid, u32 kgid, u32 count, u32 block,
+			struct ucounts *ucounts)
+{
+	guard(mutex)(&userns_state_mutex);
+
+	if (ns->uid_map.nr_extents || ns->gid_map.nr_extents)
+		return -EBUSY;
+	if (uid == (u32)-1 || gid == (u32)-1)
+		return -EINVAL;
+
+	ns->uid_map.extent[0] = (struct uid_gid_extent){
+		.first = uid, .lower_first = kuid, .count = count,
+	};
+	ns->gid_map.extent[0] = (struct uid_gid_extent){
+		.first = gid, .lower_first = kgid, .count = count,
+	};
+	/* With a single gid there are no groups to be dropped or taken up. */
+	if (count == 1)
+		ns->flags &= ~USERNS_SETGROUPS_ALLOWED;
+	ns->cell_block = block;
+	ns->cell_block_ucounts = ucounts;
+	/* Pairs with the smp_rmb() of the lookups, as in map_write(). */
+	smp_wmb();
+	ns->uid_map.nr_extents = 1;
+	ns->gid_map.nr_extents = 1;
+	return 0;
+}
+
+/**
+ * userns_retire_cell_block - never hand the block of a user namespace out again
+ * @ns: the user namespace of a cell
+ *
+ * For when something that is owned by the ids of @ns could not be got rid of.
+ * The block stays marked as used for good, so what shows is -ENOSPC and never
+ * one tenant owning what another left behind.
+ */
+void userns_retire_cell_block(struct user_namespace *ns)
+{
+	guard(mutex)(&userns_state_mutex);
+
+	if (ns->cell_block)
+		pr_warn_ratelimited("cell: kuid block %u retired\n", ns->cell_block - 1);
+	ns->cell_block = 0;
+}
 #endif
 
 static unsigned long enforced_nproc_rlimit(void)
@@ -270,6 +335,11 @@ static void free_user_ns(struct work_struct *work)
 		retire_userns_sysctls(ns);
 		key_free_user_ns(ns);
 #ifdef CONFIG_CELLS
+		/* Nothing that pins the namespace is left to name its ids. */
+		if (ns->cell_block)
+			cell_block_release(ns->cell_block - 1);
+		if (ns->cell_block_ucounts)
+			dec_ucount(ns->cell_block_ucounts, UCOUNT_CELL_ID_BLOCKS);
 		cell_put(ns->cell);
 #endif
 		ns_common_free(ns);
