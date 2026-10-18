@@ -87,6 +87,7 @@
 
 #include <linux/unaligned.h>
 #include <linux/capability.h>
+#include <linux/cell.h>
 #include <linux/errno.h>
 #include <linux/errqueue.h>
 #include <linux/types.h>
@@ -1736,6 +1737,21 @@ static int groups_to_user(sockptr_t dst, const struct group_info *src)
 	return 0;
 }
 
+/*
+ * Who the peer is, is nobody's business in another cell. The question fails
+ * rather than be answered with a nobody: 65534 is a uid like any other in a
+ * cell, and a server that lets in whoever has its own uid may well run as it.
+ */
+static bool sk_peer_foreign(struct sock *sk)
+{
+	bool foreign;
+
+	spin_lock(&sk->sk_peer_lock);
+	foreign = sk->sk_peer_cred && cred_cell(sk->sk_peer_cred) != current_cell();
+	spin_unlock(&sk->sk_peer_lock);
+	return foreign;
+}
+
 /* Hand out a pidfd for @type of the socket's peer via SO_PEERPIDFD*. */
 static int sk_getsockopt_peerpidfd(struct sock *sk, enum pid_type type,
 				   sockptr_t optval, sockptr_t optlen, int len)
@@ -1747,6 +1763,9 @@ static int sk_getsockopt_peerpidfd(struct sock *sk, enum pid_type type,
 
 	if (len > sizeof(pidfd))
 		len = sizeof(pidfd);
+
+	if (sk_peer_foreign(sk))
+		return -ENODATA;
 
 	spin_lock(&sk->sk_peer_lock);
 	peer_pid = get_pid(sk->sk_peer_pid[type]);
@@ -1964,6 +1983,9 @@ int sk_getsockopt(struct sock *sk, int level, int optname,
 		if (len > sizeof(peercred))
 			len = sizeof(peercred);
 
+		if (sk_peer_foreign(sk))
+			return -ENODATA;
+
 		spin_lock(&sk->sk_peer_lock);
 		cred_to_ucred(sk->sk_peer_pid[PIDTYPE_TGID], sk->sk_peer_cred,
 			      &peercred);
@@ -1988,6 +2010,9 @@ int sk_getsockopt(struct sock *sk, int level, int optname,
 	{
 		const struct cred *cred;
 		int ret, n;
+
+		if (sk_peer_foreign(sk))
+			return -ENODATA;
 
 		cred = sk_get_peer_cred(sk);
 		if (!cred)
@@ -2037,6 +2062,8 @@ int sk_getsockopt(struct sock *sk, int level, int optname,
 		break;
 
 	case SO_PEERSEC:
+		if (sk_peer_foreign(sk))
+			return -ENODATA;
 		return security_socket_getpeersec_stream(sock,
 							 optval, optlen, len);
 
