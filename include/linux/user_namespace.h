@@ -123,6 +123,8 @@ struct user_namespace {
 #endif
 #ifdef CONFIG_CELLS
 	struct cell		*cell;		/* whose namespace this is, counted */
+	u32			cell_block;	/* kuid block + 1, 0 for none */
+	struct ucounts		*cell_block_ucounts;
 #endif
 } __randomize_layout;
 
@@ -193,6 +195,10 @@ static inline struct user_namespace *get_user_ns(struct user_namespace *ns)
 extern int create_user_ns(struct cred *new);
 #ifdef CONFIG_CELLS
 int create_cell_user_ns(struct cred *new, struct cell *cell);
+int userns_set_cell_map(struct user_namespace *ns, u32 uid, u32 kuid,
+			u32 gid, u32 kgid, u32 count, u32 block,
+			struct ucounts *ucounts);
+void userns_retire_cell_block(struct user_namespace *ns);
 #endif
 extern int unshare_userns(unsigned long unshare_flags, struct cred **new_cred);
 extern void __put_user_ns(struct user_namespace *ns);
