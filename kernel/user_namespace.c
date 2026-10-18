@@ -1434,6 +1434,10 @@ static int userns_install(struct nsset *nsset, struct ns_common *ns)
 	if (user_ns == current_user_ns())
 		return -EINVAL;
 
+	/* Nobody enters a cell, not even while it is being built. */
+	if (userns_is_cell(user_ns))
+		return -EPERM;
+
 	/* Tasks that share a thread group must share a user namespace */
 	if (!thread_group_empty(current))
 		return -EINVAL;
