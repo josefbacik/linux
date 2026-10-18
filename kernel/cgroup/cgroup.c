@@ -7102,6 +7102,23 @@ int cgroup_cell_budget_put(struct cgroup *cgrp, bool handed, kuid_t uid, kgid_t 
 }
 
 /**
+ * cgroup_cell_cset - the css_set a cgroup namespace rooted at a cgroup needs
+ * @cgrp: a cgroup on the default hierarchy
+ *
+ * Return: a css_set that has @cgrp on the default hierarchy and the root on
+ * every other, with a reference, or NULL if @cgrp is dead or memory is short.
+ */
+struct css_set *cgroup_cell_cset(struct cgroup *cgrp)
+{
+	struct css_set *cset;
+
+	cgroup_lock();
+	cset = cgroup_is_dead(cgrp) ? NULL : find_css_set(&init_css_set, cgrp);
+	cgroup_unlock();
+	return cset;
+}
+
+/**
  * cgroup_cell_chown - hand a cgroup to somebody
  * @cgrp: the cgroup
  * @uid:  the new owner

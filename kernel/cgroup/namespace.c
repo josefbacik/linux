@@ -89,6 +89,50 @@ struct cgroup_namespace *copy_cgroup_ns(u64 flags,
 	return new_ns;
 }
 
+#ifdef CONFIG_CELLS
+/**
+ * cgroup_cell_ns - make a cgroup namespace rooted at a given cgroup
+ * @user_ns: the user namespace that will own it
+ * @cgrp:    the cgroup, on the default hierarchy
+ *
+ * copy_cgroup_ns() roots the namespace wherever the caller happens to be. This
+ * is for a cell, whose builder is not in the budget.
+ *
+ * Return: the namespace with a reference, or an ERR_PTR().
+ */
+struct cgroup_namespace *cgroup_cell_ns(struct user_namespace *user_ns,
+					struct cgroup *cgrp)
+{
+	struct cgroup_namespace *new_ns;
+	struct ucounts *ucounts;
+	struct css_set *cset;
+
+	ucounts = inc_cgroup_namespaces(user_ns);
+	if (!ucounts)
+		return ERR_PTR(-ENOSPC);
+
+	cset = cgroup_cell_cset(cgrp);
+	if (!cset) {
+		dec_cgroup_namespaces(ucounts);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	new_ns = alloc_cgroup_ns();
+	if (IS_ERR(new_ns)) {
+		put_css_set(cset);
+		dec_cgroup_namespaces(ucounts);
+		return new_ns;
+	}
+
+	new_ns->user_ns = get_user_ns(user_ns);
+	new_ns->ucounts = ucounts;
+	new_ns->root_cset = cset;
+
+	ns_tree_add(new_ns);
+	return new_ns;
+}
+#endif
+
 static int cgroupns_install(struct nsset *nsset, struct ns_common *ns)
 {
 	struct nsproxy *nsproxy = nsset->nsproxy;
