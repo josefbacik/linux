@@ -6,6 +6,7 @@
  */
 
 #include <linux/export.h>
+#include <linux/cell.h>
 #include <linux/init.h>
 #include <linux/poison.h>
 #include <linux/sched.h>
@@ -326,6 +327,7 @@ struct key *key_alloc(struct key_type *type, const char *desc,
 	key->datalen = type->def_datalen;
 	key->uid = uid;
 	key->gid = gid;
+	key->cell_id = cred_cell_id(cred);
 	key->perm = perm;
 	key->expiry = TIME64_MAX;
 	key->restrict_link = restrict_link;
