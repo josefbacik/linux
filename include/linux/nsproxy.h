@@ -12,6 +12,9 @@ struct ipc_namespace;
 struct pid_namespace;
 struct cgroup_namespace;
 struct fs_struct;
+struct cell;
+struct net;
+struct user_namespace;
 
 /*
  * A structure to contain pointers to all per-process
@@ -101,6 +104,12 @@ void switch_task_namespaces(struct task_struct *tsk, struct nsproxy *new);
 int exec_task_namespaces(void);
 void deactivate_nsproxy(struct nsproxy *ns);
 void nsproxy_free(struct nsproxy *ns);
+struct nsproxy *cell_create_nsproxy(struct user_namespace *user_ns,
+				    struct mnt_namespace *mnt_ns,
+				    struct pid_namespace *pid_ns,
+				    struct net *net,
+				    struct cgroup_namespace *cgroup_ns,
+				    const char *hostname);
 int unshare_nsproxy_namespaces(unsigned long, struct nsproxy **,
 	struct cred *, struct fs_struct *);
 int __init nsproxy_cache_init(void);
