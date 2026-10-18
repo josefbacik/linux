@@ -37,6 +37,10 @@
 #include <uapi/linux/cell.h>
 #include <uapi/linux/pidfd.h>
 
+#define EMBRYO_KEY_MAX		32
+#define EMBRYO_MAX_STRINGS	4096
+#define EMBRYO_MAX_BLOCK	(256 * 1024)
+
 struct embryo_strings {
 	char		*block;		/* NUL terminated strings, back to back */
 	const char	**vec;		/* NULL terminated, points into @block */
@@ -227,4 +231,182 @@ void embryo_pidfd_release(struct pid *pid)
 	e = READ_ONCE(task->embryo);
 	if (e && !READ_ONCE(e->started))
 		do_send_sig_info(SIGKILL, SEND_SIG_PRIV, task, PIDTYPE_TGID);
+}
+
+static struct embryo *embryo_get_from_file(struct file *file)
+{
+	struct task_struct *task;
+	struct embryo *e;
+	struct pid *pid;
+
+	pid = pidfd_pid(file);
+	if (IS_ERR(pid))
+		return ERR_CAST(pid);
+	/* Only the file clone3() returned will do. Nothing else ever has this. */
+	if (!(file->f_flags & PIDFD_EMBRYO))
+		return ERR_PTR(-EPERM);
+
+	guard(rcu)();
+	task = pid_task(pid, PIDTYPE_TGID);
+	if (!task)
+		return ERR_PTR(-ESRCH);
+	e = READ_ONCE(task->embryo);
+	if (!e || !refcount_inc_not_zero(&e->ref))
+		return ERR_PTR(-EBUSY);
+	return e;
+}
+
+static int embryo_set_strings(struct embryo_strings *s, const void __user *ublock,
+			      size_t len)
+{
+	struct embryo_strings new = {};
+	unsigned int nr = 0, i;
+	size_t off;
+
+	if (!len || len > EMBRYO_MAX_BLOCK)
+		return -E2BIG;
+
+	new.block = vmemdup_user(ublock, len);
+	if (IS_ERR(new.block))
+		return PTR_ERR(new.block);
+	if (new.block[len - 1]) {
+		kvfree(new.block);
+		return -EINVAL;
+	}
+
+	for (off = 0; off < len; off += strlen(new.block + off) + 1)
+		nr++;
+	if (nr > EMBRYO_MAX_STRINGS) {
+		kvfree(new.block);
+		return -E2BIG;
+	}
+
+	new.vec = kvmalloc_array(nr + 1, sizeof(*new.vec), GFP_KERNEL_ACCOUNT);
+	if (!new.vec) {
+		kvfree(new.block);
+		return -ENOMEM;
+	}
+	for (off = 0, i = 0; off < len; off += strlen(new.block + off) + 1)
+		new.vec[i++] = new.block + off;
+	new.vec[i] = NULL;
+
+	embryo_strings_free(s);
+	*s = new;
+	return 0;
+}
+
+static int embryo_start(struct embryo *e)
+{
+	scoped_guard(mutex, &e->lock) {
+		if (e->started)
+			return -EBUSY;
+		if (!e->exec)
+			return -EINVAL;
+		WRITE_ONCE(e->started, true);
+	}
+	complete(&e->start);
+
+	/*
+	 * Everything up to the point of no return of the exec is reported
+	 * here. Past that it is a fatal signal, for the pidfd to tell.
+	 */
+	if (wait_for_completion_killable(&e->done))
+		return -EINTR;
+	return e->result;
+}
+
+/**
+ * sys_task_configure - set up, and start, an embryo task
+ * @pidfd:  the pidfd clone3(CLONE_EMBRYO) returned, and no other on that task
+ * @cmd:    one of enum task_configure_cmd
+ * @ukey:   the name of what is set, or NULL for TASK_CMD_START
+ * @uvalue: a string for TASK_SET_STRING, @aux bytes for TASK_SET_BINARY
+ * @aux:    a length for TASK_SET_BINARY, a file descriptor for TASK_SET_FD
+ *
+ * Shaped like fsconfig(). Data only goes in.
+ *
+ * TASK_CMD_START applies everything in the context of the embryo, has it exec
+ * and waits for that. Whatever goes wrong is returned here, and the embryo is
+ * killed.
+ *
+ * Return: 0, -EPERM for any other pidfd, -EBUSY once the embryo was started,
+ * -ESRCH if it was killed, -EOPNOTSUPP for an unknown @cmd, -EINVAL for an
+ * unknown key or arguments that do not go with @cmd, or what went wrong.
+ */
+SYSCALL_DEFINE5(task_configure, int, pidfd, unsigned int, cmd,
+		const char __user *, ukey, const void __user *, uvalue, int, aux)
+{
+	char *key __free(kfree) = NULL;
+	char *str __free(kfree) = NULL;
+	struct embryo *e;
+	int ret;
+
+	switch (cmd) {
+	case TASK_SET_STRING:
+		if (!ukey || !uvalue || aux)
+			return -EINVAL;
+		break;
+	case TASK_SET_BINARY:
+		if (!ukey || !uvalue || aux <= 0)
+			return -EINVAL;
+		break;
+	case TASK_CMD_START:
+		if (ukey || uvalue || aux)
+			return -EINVAL;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	if (ukey) {
+		key = strndup_user(ukey, EMBRYO_KEY_MAX);
+		if (IS_ERR(key))
+			return PTR_ERR(no_free_ptr(key));
+	}
+	if (cmd == TASK_SET_STRING) {
+		str = strndup_user(uvalue, PATH_MAX);
+		if (IS_ERR(str))
+			return PTR_ERR(no_free_ptr(str));
+	}
+
+	CLASS(fd, f)(pidfd);
+	if (fd_empty(f))
+		return -EBADF;
+	e = embryo_get_from_file(fd_file(f));
+	if (IS_ERR(e))
+		return PTR_ERR(e);
+
+	if (cmd == TASK_CMD_START) {
+		ret = embryo_start(e);
+		embryo_put(e);
+		return ret;
+	}
+
+	mutex_lock(&e->lock);
+	ret = -EBUSY;
+	if (e->started)
+		goto out;
+
+	switch (cmd) {
+	case TASK_SET_STRING:
+		ret = -EINVAL;
+		if (strcmp(key, "exec"))
+			break;
+		kfree(e->exec);
+		e->exec = no_free_ptr(str);
+		ret = 0;
+		break;
+	case TASK_SET_BINARY:
+		if (!strcmp(key, "argv"))
+			ret = embryo_set_strings(&e->argv, uvalue, aux);
+		else if (!strcmp(key, "envp"))
+			ret = embryo_set_strings(&e->envp, uvalue, aux);
+		else
+			ret = -EINVAL;
+		break;
+	}
+out:
+	mutex_unlock(&e->lock);
+	embryo_put(e);
+	return ret;
 }

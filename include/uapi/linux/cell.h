@@ -57,4 +57,12 @@ enum cell_open_what {
 	CELL_OPEN_SLOT		= 0,	/* An fd on the object in the slot named by @key */
 };
 
+/* task_configure(): @cmd. */
+enum task_configure_cmd {
+	TASK_SET_STRING		= 0,	/* Set @key to the string in @value */
+	TASK_SET_BINARY		= 1,	/* Set @key to the @aux bytes at @value */
+	TASK_SET_FD		= 2,	/* The file to have at number @key, from fd @aux */
+	TASK_CMD_START		= 3,	/* Apply everything and exec */
+};
+
 #endif /* _UAPI_LINUX_CELL_H */
