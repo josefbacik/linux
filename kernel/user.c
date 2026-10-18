@@ -154,6 +154,38 @@ static void user_epoll_free(struct user_struct *up)
 #endif
 }
 
+#ifdef CONFIG_CELLS
+/**
+ * uid_range_in_use - is there a user_struct for any uid of a range?
+ * @first: the first uid of the range
+ * @last:  the last
+ *
+ * A user_struct is keyed by a bare kuid and pins no user namespace. The id block
+ * allocator asks before it lends a block, and before it takes one back.
+ *
+ * Return: true if there is one.
+ */
+bool uid_range_in_use(kuid_t first, kuid_t last)
+{
+	struct user_struct *user;
+	unsigned long flags;
+	bool ret = false;
+	int i;
+
+	spin_lock_irqsave(&uidhash_lock, flags);
+	for (i = 0; i < UIDHASH_SZ && !ret; i++) {
+		hlist_for_each_entry(user, &uidhash_table[i], uidhash_node) {
+			if (uid_gte(user->uid, first) && uid_lte(user->uid, last)) {
+				ret = true;
+				break;
+			}
+		}
+	}
+	spin_unlock_irqrestore(&uidhash_lock, flags);
+	return ret;
+}
+#endif
+
 /* IRQs are disabled and uidhash_lock is held upon function entry.
  * IRQ state (as stored in flags) is restored and uidhash_lock released
  * upon function exit.
