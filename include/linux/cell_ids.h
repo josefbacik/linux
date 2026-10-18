@@ -62,4 +62,42 @@ static inline bool cell_range_in_window(u32 first, u32 count) { return false; }
 static inline bool userns_is_cell(const struct user_namespace *ns) { return false; }
 
 #endif
+
+/**
+ * kuid_storable - may a filesystem store a kuid?
+ * @fs_userns: the user namespace of the filesystem, sb->s_user_ns
+ * @kuid:      the kuid, after the idmapping of the mount has been applied
+ *
+ * An id that was lent to a cell must not outlive the loan, so it never reaches
+ * a filesystem that the cell does not own. Through a mount that is idmapped for
+ * the cell the id has become the on-disk one long before it gets here.
+ *
+ * That @kuid is an id of this cell and not of another is for the caller's usual
+ * kuid_has_mapping() to say.
+ *
+ * Return: true if @kuid is outside of the window, or @fs_userns is the user
+ * namespace of a cell.
+ */
+static inline bool kuid_storable(const struct user_namespace *fs_userns, kuid_t kuid)
+{
+	return likely(!cell_id_in_window(__kuid_val(kuid))) ||
+	       userns_is_cell(fs_userns);
+}
+
+/**
+ * kgid_storable - may a filesystem store a kgid?
+ * @fs_userns: the user namespace of the filesystem, sb->s_user_ns
+ * @kgid:      the kgid, after the idmapping of the mount has been applied
+ *
+ * See kuid_storable().
+ *
+ * Return: true if @kgid is outside of the window, or @fs_userns is the user
+ * namespace of a cell.
+ */
+static inline bool kgid_storable(const struct user_namespace *fs_userns, kgid_t kgid)
+{
+	return likely(!cell_id_in_window(__kgid_val(kgid))) ||
+	       userns_is_cell(fs_userns);
+}
+
 #endif /* _LINUX_CELL_IDS_H */

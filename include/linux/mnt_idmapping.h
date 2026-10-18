@@ -4,6 +4,7 @@
 
 #include <linux/types.h>
 #include <linux/uidgid.h>
+#include <linux/cell_ids.h>
 
 struct mnt_idmap;
 struct user_namespace;
@@ -152,7 +153,9 @@ static inline bool vfsuid_has_fsmapping(const struct mnt_idmap *idmap,
 					struct user_namespace *fs_userns,
 					vfsuid_t vfsuid)
 {
-	return uid_valid(from_vfsuid(idmap, fs_userns, vfsuid));
+	kuid_t kuid = from_vfsuid(idmap, fs_userns, vfsuid);
+
+	return uid_valid(kuid) && kuid_storable(fs_userns, kuid);
 }
 
 static inline bool vfsuid_has_mapping(struct user_namespace *userns,
@@ -190,7 +193,9 @@ static inline bool vfsgid_has_fsmapping(const struct mnt_idmap *idmap,
 					struct user_namespace *fs_userns,
 					vfsgid_t vfsgid)
 {
-	return gid_valid(from_vfsgid(idmap, fs_userns, vfsgid));
+	kgid_t kgid = from_vfsgid(idmap, fs_userns, vfsgid);
+
+	return gid_valid(kgid) && kgid_storable(fs_userns, kgid);
 }
 
 static inline bool vfsgid_has_mapping(struct user_namespace *userns,
