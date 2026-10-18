@@ -508,8 +508,20 @@ static int ptrace_attach(struct task_struct *task, long request,
 static int ptrace_traceme(void)
 {
 	int ret = -EPERM;
+	bool same;
 
 	write_lock_irq(&tasklist_lock);
+	/*
+	 * The parent of a task that was spawned into a cell is outside of it,
+	 * never asked to be a tracer and will not behave like one.
+	 */
+	rcu_read_lock();
+	same = cell_same(current_cred(), __task_cred(current->real_parent));
+	rcu_read_unlock();
+	if (!same) {
+		write_unlock_irq(&tasklist_lock);
+		return -EPERM;
+	}
 	/* Are we already being traced? */
 	if (!current->ptrace) {
 		ret = security_ptrace_traceme(current->parent);
