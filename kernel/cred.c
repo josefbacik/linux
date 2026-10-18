@@ -575,6 +575,10 @@ void __init cred_init(void)
  * Where it says so, a subject with euid 0 may act on anybody. That is a
  * capability by another name, from before there were any.
  *
+ * It is also the one place to say when the ids of two credentials are not to be
+ * compared at all, in which case every rule says no. They are not across cells,
+ * see Documentation/userspace-api/cells.rst.
+ *
  * These functions only speak for the ids. A capability that does as well, and
  * the LSM hook that goes with the operation, remain with the caller.
  *
@@ -585,6 +589,18 @@ void __init cred_init(void)
 #define CRED_RUID	BIT(0)
 #define CRED_EUID	BIT(1)
 #define CRED_SUID	BIT(2)
+
+/*
+ * Are the ids of two credentials to be compared at all? Every rule below asks
+ * this first.
+ *
+ * Across cells an id means nothing, 0 included. A one-id cell runs on the ids
+ * of whoever made it, and authority over a cell is a handle.
+ */
+static bool cred_ids_comparable(const struct cred *subj, const struct cred *obj)
+{
+	return cell_same(subj, obj);
+}
 
 static bool cred_euid_is_root(const struct cred *subj)
 {
@@ -605,6 +621,9 @@ static bool cred_has_uid(const struct cred *cred, unsigned int ids, kuid_t uid)
 static bool cred_uid_match_any(const struct cred *subj, unsigned int subj_ids,
 			       const struct cred *obj, unsigned int obj_ids)
 {
+	if (!cred_ids_comparable(subj, obj))
+		return false;
+
 	return ((subj_ids & CRED_RUID) && cred_has_uid(obj, obj_ids, subj->uid)) ||
 	       ((subj_ids & CRED_EUID) && cred_has_uid(obj, obj_ids, subj->euid));
 }
@@ -631,6 +650,9 @@ bool cred_ids_allow_signal(const struct cred *subj, const struct cred *obj)
  */
 bool cred_ids_allow_sigio(const struct cred *subj, const struct cred *obj)
 {
+	if (!cred_ids_comparable(subj, obj))
+		return false;
+
 	return cred_euid_is_root(subj) || cred_ids_allow_signal(subj, obj);
 }
 
@@ -669,6 +691,9 @@ bool cred_ids_allow_ioprio(const struct cred *subj, const struct cred *obj)
  */
 bool cred_ids_allow_move(const struct cred *subj, const struct cred *obj)
 {
+	if (!cred_ids_comparable(subj, obj))
+		return false;
+
 	return cred_euid_is_root(subj) ||
 	       cred_uid_match_any(subj, CRED_EUID, obj, CRED_RUID | CRED_SUID);
 }
@@ -690,6 +715,9 @@ bool cred_ids_allow_control(const struct cred *subj, enum cred_ids which,
 {
 	kuid_t uid;
 	kgid_t gid;
+
+	if (!cred_ids_comparable(subj, obj))
+		return false;
 
 	switch (which) {
 	case CRED_IDS_REAL:
