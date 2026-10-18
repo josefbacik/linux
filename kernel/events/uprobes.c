@@ -2185,6 +2185,10 @@ void uprobe_copy_process(struct task_struct *t, u64 flags)
 
 	t->utask = NULL;
 
+	/* Nothing of the parent's mm matters to a task that has none. */
+	if (!t->mm)
+		return;
+
 	if (!utask || !utask->return_instances)
 		return;
 
