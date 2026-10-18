@@ -21,6 +21,14 @@ struct mnt_idmap {
 	struct uid_gid_map uid_map;
 	struct uid_gid_map gid_map;
 	refcount_t count;
+#ifdef CONFIG_CELLS
+	/*
+	 * The maps are a copy, and a copy pins nothing. The ids of a cell are
+	 * only lent to it, until its user namespace is freed, so an idmapping
+	 * that names them holds on to that.
+	 */
+	struct user_namespace *cell_ns;
+#endif
 };
 
 /*
@@ -281,6 +289,9 @@ static void free_mnt_idmap(struct mnt_idmap *idmap)
 		kfree(idmap->gid_map.forward);
 		kfree(idmap->gid_map.reverse);
 	}
+#ifdef CONFIG_CELLS
+	put_user_ns(idmap->cell_ns);
+#endif
 	kfree(idmap);
 }
 
@@ -294,6 +305,10 @@ struct mnt_idmap *alloc_mnt_idmap(struct user_namespace *mnt_userns)
 		return ERR_PTR(-ENOMEM);
 
 	refcount_set(&idmap->count, 1);
+#ifdef CONFIG_CELLS
+	if (userns_is_cell(mnt_userns))
+		idmap->cell_ns = get_user_ns(mnt_userns);
+#endif
 	ret = copy_mnt_idmap(&mnt_userns->uid_map, &idmap->uid_map);
 	if (!ret)
 		ret = copy_mnt_idmap(&mnt_userns->gid_map, &idmap->gid_map);
