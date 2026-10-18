@@ -8,6 +8,7 @@ TARGETS += bpf
 TARGETS += breakpoints
 TARGETS += cachestat
 TARGETS += capabilities
+TARGETS += cell
 TARGETS += cgroup
 TARGETS += clone3
 TARGETS += connector
