@@ -28,6 +28,7 @@
 #include "cgroup-internal.h"
 
 #include <linux/bpf-cgroup.h>
+#include <linux/cell.h>
 #include <linux/cred.h>
 #include <linux/errno.h>
 #include <linux/init_task.h>
@@ -6844,6 +6845,41 @@ static struct cgroup *cgroup_get_from_file(struct file *f)
 	return cgrp;
 }
 
+/*
+ * Fork into the budget of a cell. The cellfd is the authority: whoever gave the
+ * cell this budget was asked everything cgroup_css_set_fork() asks of a caller
+ * that names a cgroup. Consumes @cset.
+ */
+static int cgroup_css_set_fork_cell(struct kernel_clone_args *kargs,
+				    struct css_set *cset)
+{
+	struct cgroup *dst_cgrp = cell_budget(kargs->cell);
+	int ret;
+
+	ret = -ENODEV;
+	if (cgroup_is_dead(dst_cgrp))
+		goto err;
+	ret = cgroup_migrate_vet_dst(dst_cgrp);
+	if (ret)
+		goto err;
+	ret = -ENOMEM;
+	kargs->cset = find_css_set(cset, dst_cgrp);
+	if (!kargs->cset)
+		goto err;
+
+	put_css_set(cset);
+	cgroup_get(dst_cgrp);
+	kargs->cgrp = dst_cgrp;
+	kargs->kill_seq = dst_cgrp->kill_seq;
+	return 0;
+
+err:
+	cgroup_threadgroup_change_end(current);
+	cgroup_unlock();
+	put_css_set(cset);
+	return ret;
+}
+
 /**
  * cgroup_css_set_fork - find or create a css_set for a child process
  * @kargs: the arguments passed to create the child process
@@ -6883,6 +6919,9 @@ static int cgroup_css_set_fork(struct kernel_clone_args *kargs)
 		kargs->cset = cset;
 		return 0;
 	}
+
+	if (kargs->cell)
+		return cgroup_css_set_fork_cell(kargs, cset);
 
 	CLASS(fd_raw, f)(kargs->cgroup);
 	if (fd_empty(f)) {
