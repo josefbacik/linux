@@ -154,6 +154,9 @@ struct cgroup *cgroup_get_from_path(const char *path);
 struct cgroup *cgroup_get_from_fd(int fd);
 
 struct cgroup *cgroup_cell_budget_get(struct file *file, kuid_t *uid, kgid_t *gid);
+struct css_set *cgroup_cell_cset(struct cgroup *cgrp);
+struct cgroup_namespace *cgroup_cell_ns(struct user_namespace *user_ns,
+					struct cgroup *cgrp);
 int cgroup_cell_chown(struct cgroup *cgrp, kuid_t uid, kgid_t gid);
 bool cgroup_cell_kill(struct cgroup *cgrp);
 int cgroup_cell_budget_put(struct cgroup *cgrp, bool handed, kuid_t uid, kgid_t gid);
