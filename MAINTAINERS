@@ -6008,6 +6008,20 @@ F:	arch/powerpc/include/asm/spu*.h
 F:	arch/powerpc/include/uapi/asm/spu*.h
 F:	arch/powerpc/platforms/cell/
 
+CELLS
+M:	Josef Bacik <josef@toxicpanda.com>
+L:	linux-fsdevel@vger.kernel.org
+L:	linux-kernel@vger.kernel.org
+S:	Maintained
+F:	Documentation/userspace-api/cells.rst
+F:	fs/cellfs.c
+F:	include/linux/cell.h
+F:	include/linux/cell_ids.h
+F:	include/uapi/linux/cell.h
+F:	kernel/cell/
+F:	kernel/embryo.c
+F:	tools/testing/selftests/cell/
+
 CELLWISE CW2015 BATTERY DRIVER
 M:	Tobias Schrammm <t.schramm@manjaro.org>
 S:	Maintained
