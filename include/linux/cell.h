@@ -231,4 +231,11 @@ static inline bool cell_ns_may_enter(const struct ns_common *ns,
 }
 #endif
 
+/* A task of a cell stays within the budget. */
+#ifdef CONFIG_CELLS
+bool cell_may_migrate(struct task_struct *task, struct cgroup *dst);
+#else
+static inline bool cell_may_migrate(struct task_struct *t, struct cgroup *d) { return true; }
+#endif
+
 #endif /* _LINUX_CELL_H */
