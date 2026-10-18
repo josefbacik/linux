@@ -12,6 +12,16 @@
 
 /* cell_create(): @parent is CELL_SELF, see <linux/fcntl.h>. */
 
+/* cell_configure(): @cmd. Data only ever goes in. */
+enum cell_configure_cmd {
+	CELL_SET_FLAG		= 0,	/* Set the flag named by @key. There are none yet */
+	CELL_SET_STRING		= 1,	/* Set @key to the string in @value */
+	CELL_SET_BINARY		= 2,	/* Set @key to the @aux bytes at @value */
+	CELL_SET_FD		= 3,	/* Fill the slot named by @key from fd @aux */
+	CELL_CMD_SEAL		= 4,	/* Validate everything and seal */
+	CELL_CMD_KILL		= 5,	/* Destroy the cell and everything in it */
+};
+
 /* Life of a cell. It only ever moves down this list. */
 enum cell_state {
 	CELL_BUILDING		= 0,	/* Slots may be filled */
