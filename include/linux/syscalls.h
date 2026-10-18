@@ -77,6 +77,7 @@ struct cachestat;
 struct statmount;
 struct mnt_id_req;
 struct ns_id_req;
+struct cell_info;
 struct xattr_args;
 struct file_attr;
 
@@ -441,6 +442,19 @@ asmlinkage long sys_statmount(const struct mnt_id_req __user *req,
 asmlinkage long sys_listmount(const struct mnt_id_req __user *req,
 			      u64 __user *mnt_ids, size_t nr_mnt_ids,
 			      unsigned int flags);
+asmlinkage long sys_cell_create(int parent, unsigned int flags);
+asmlinkage long sys_cell_configure(int cfd, unsigned int cmd,
+				   const char __user *key,
+				   const void __user *value, int aux);
+asmlinkage long sys_cell_info(int cfd, struct cell_info __user *info,
+			      size_t size, unsigned int flags);
+asmlinkage long sys_cell_open(int cfd, unsigned int what,
+			      const char __user *key, const void __user *arg,
+			      unsigned int flags);
+asmlinkage long sys_cell_kill(int cfd, unsigned int flags);
+asmlinkage long sys_pidfd_configure(int pidfd, unsigned int cmd,
+				   const char __user *key,
+				   const void __user *value, int aux);
 asmlinkage long sys_listns(const struct ns_id_req __user *req,
 			   u64 __user *ns_ids, size_t nr_ns_ids,
 			   unsigned int flags);
