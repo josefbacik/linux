@@ -3080,6 +3080,29 @@ int cgroup_migrate(struct task_struct *leader, bool threadgroup,
 	return cgroup_migrate_execute(mgctx);
 }
 
+/*
+ * May @task, which cell_may_migrate() has no objection to, be put into @dst?
+ * Budgets do not nest, so a task of a cell is within its own.
+ */
+static bool cgroup_cell_may_enter(struct task_struct *task, struct cgroup *dst)
+{
+	bool in_cell;
+
+	if (!IS_ENABLED(CONFIG_CELLS))
+		return true;
+
+	rcu_read_lock();
+	in_cell = task_cell(task);
+	rcu_read_unlock();
+	if (in_cell)
+		return true;
+
+	for (; dst; dst = cgroup_parent(dst))
+		if (test_bit(CGRP_CELL_BUDGET, &dst->flags))
+			return false;
+	return true;
+}
+
 /**
  * cgroup_attach_task - attach a task or a whole threadgroup to a cgroup
  * @dst_cgrp: the cgroup to attach to
@@ -3103,6 +3126,14 @@ int cgroup_attach_task(struct cgroup *dst_cgrp, struct task_struct *leader,
 	 */
 	if (!cell_may_migrate(leader, dst_cgrp))
 		return -EPERM;
+
+	/*
+	 * Nothing else gets into a budget. A kill is to take everything there
+	 * with it, which it could not do to a kernel thread.
+	 */
+	if (!cgroup_cell_may_enter(leader, dst_cgrp))
+		return -EPERM;
+
 	/* look up all src csets */
 	spin_lock_irq(&css_set_lock);
 	task = leader;
@@ -6955,6 +6986,13 @@ static int cgroup_css_set_fork(struct kernel_clone_args *kargs)
 		ret = -EPERM;
 		goto err;
 	}
+
+	/* And nobody else forks into one. */
+	if (!cgroup_cell_may_enter(current, dst_cgrp)) {
+		ret = -EPERM;
+		goto err;
+	}
+
 	/*
 	 * Verify that we the target cgroup is writable for us. This is
 	 * usually done by the vfs layer but since we're not going through
