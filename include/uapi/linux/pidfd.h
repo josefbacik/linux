@@ -14,6 +14,7 @@
 #include <linux/sched.h>
 #define PIDFD_STALE CLONE_PIDFD
 #define PIDFD_AUTOKILL O_TRUNC
+#define PIDFD_EMBRYO O_NOCTTY
 #endif
 
 /* Flags for pidfd_send_signal(). */

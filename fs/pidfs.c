@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/anon_inodes.h>
+#include <linux/cell.h>
 #include <linux/compat.h>
 #include <linux/exportfs.h>
 #include <linux/file.h>
@@ -695,6 +696,9 @@ static int pidfs_file_release(struct inode *inode, struct file *file)
 	struct pid *pid = inode->i_private;
 	struct task_struct *task;
 
+	if (file->f_flags & PIDFD_EMBRYO)
+		embryo_pidfd_release(pid);
+
 	if (!(file->f_flags & PIDFD_AUTOKILL))
 		return 0;
 
@@ -965,7 +969,8 @@ static struct file *pidfs_dentry_open(const struct path *path,
 	file = dentry_open(path, flags | O_RDWR, cred);
 	/* do_dentry_open() strips O_EXCL and O_TRUNC. */
 	if (!IS_ERR(file))
-		file->f_flags |= flags & (PIDFD_THREAD | PIDFD_AUTOKILL);
+		file->f_flags |= flags & (PIDFD_THREAD | PIDFD_AUTOKILL |
+					  PIDFD_EMBRYO);
 	return file;
 }
 
@@ -994,10 +999,10 @@ static int pidfs_export_permission(struct handle_to_path_ctx *ctx,
 static struct file *pidfs_export_open(const struct path *path, unsigned int oflags)
 {
 	/*
-	 * Opening via file handle may never raise PIDFD_AUTOKILL. That can
-	 * only be done at task creation!
+	 * Opening via file handle may never raise PIDFD_AUTOKILL or
+	 * PIDFD_EMBRYO. That can only be done at task creation!
 	 */
-	if (WARN_ON_ONCE(oflags & PIDFD_AUTOKILL))
+	if (WARN_ON_ONCE(oflags & (PIDFD_AUTOKILL | PIDFD_EMBRYO)))
 		return ERR_PTR(-EINVAL);
 	/* Clear O_LARGEFILE as open_by_handle_at() forces it. */
 	return pidfs_dentry_open(path, oflags & ~O_LARGEFILE, current_cred());
@@ -1187,8 +1192,8 @@ struct file *pidfs_alloc_file(struct pid *pid, unsigned int flags)
 	 * Ensure that internal pidfd flags don't overlap with each
 	 * other or with uapi pidfd flags.
 	 */
-	BUILD_BUG_ON(hweight32(PIDFD_THREAD | PIDFD_NONBLOCK |
-				PIDFD_STALE | PIDFD_AUTOKILL) != 4);
+	BUILD_BUG_ON(hweight32(PIDFD_THREAD | PIDFD_NONBLOCK | PIDFD_STALE |
+			       PIDFD_AUTOKILL | PIDFD_EMBRYO) != 5);
 
 	ret = path_from_stashed(&pid->stashed, pidfs_mnt, get_pid(pid), &path);
 	if (ret < 0)

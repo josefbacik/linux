@@ -2401,6 +2401,8 @@ __latent_entropy struct task_struct *copy_process(
 			flags |= PIDFD_THREAD;
 		if (clone_flags & CLONE_PIDFD_AUTOKILL)
 			flags |= PIDFD_AUTOKILL;
+		if (clone_flags & CLONE_EMBRYO)
+			flags |= PIDFD_EMBRYO;
 
 		/*
 		 * Note that no task has been attached to @pid yet indicate

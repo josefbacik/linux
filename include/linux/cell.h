@@ -205,4 +205,11 @@ static inline void embryo_fork_finish(struct kernel_clone_args *a, struct task_s
 
 #endif
 
+/* The pidfd of an embryo. */
+#ifdef CONFIG_CELLS
+void embryo_pidfd_release(struct pid *pid);
+#else
+static inline void embryo_pidfd_release(struct pid *pid) { }
+#endif
+
 #endif /* _LINUX_CELL_H */

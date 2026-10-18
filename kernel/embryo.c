@@ -205,3 +205,26 @@ void embryo_fork_finish(struct kernel_clone_args *args, struct task_struct *p)
 	args->embryo = NULL;
 	cell_fork_finish(args);
 }
+
+/**
+ * embryo_pidfd_release - the pidfd clone3(CLONE_EMBRYO) returned was closed
+ * @pid: what it was a pidfd of
+ *
+ * An embryo that nobody can start any more is killed. One that has been started
+ * is left alone.
+ *
+ * Context: The ->release() of the file.
+ */
+void embryo_pidfd_release(struct pid *pid)
+{
+	struct task_struct *task;
+	struct embryo *e;
+
+	guard(rcu)();
+	task = pid_task(pid, PIDTYPE_TGID);
+	if (!task)
+		return;
+	e = READ_ONCE(task->embryo);
+	if (e && !READ_ONCE(e->started))
+		do_send_sig_info(SIGKILL, SEND_SIG_PRIV, task, PIDTYPE_TGID);
+}
