@@ -7062,6 +7062,40 @@ out:
 	}
 	return cgrp;
 }
+
+/**
+ * cgroup_cell_chown - hand a cgroup to somebody
+ * @cgrp: the cgroup
+ * @uid:  the new owner
+ * @gid:  the new group
+ *
+ * Changes what delegating a cgroup is about: the directory, cgroup.procs,
+ * cgroup.threads and cgroup.subtree_control. The limits stay with whoever is
+ * above.
+ *
+ * Return: 0 or a negative error, in which case some of it may have changed.
+ */
+int cgroup_cell_chown(struct cgroup *cgrp, kuid_t uid, kgid_t gid)
+{
+	static const char * const files[] = {
+		"cgroup.procs", "cgroup.threads", "cgroup.subtree_control",
+	};
+	struct iattr iattr = {
+		.ia_valid = ATTR_UID | ATTR_GID, .ia_uid = uid, .ia_gid = gid,
+	};
+	int i, ret;
+
+	ret = kernfs_setattr(cgrp->kn, &iattr);
+	for (i = 0; !ret && i < ARRAY_SIZE(files); i++) {
+		struct kernfs_node *kn = kernfs_find_and_get(cgrp->kn, files[i]);
+
+		if (!kn)
+			continue;
+		ret = kernfs_setattr(kn, &iattr);
+		kernfs_put(kn);
+	}
+	return ret;
+}
 #endif /* CONFIG_CELLS */
 
 /**
