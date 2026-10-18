@@ -10,6 +10,7 @@ struct mnt_namespace;
 struct fs_struct;
 struct user_namespace;
 struct ns_common;
+struct path;
 
 extern struct mnt_namespace init_mnt_ns;
 
@@ -18,6 +19,11 @@ extern struct mnt_namespace *copy_mnt_ns(u64, struct mnt_namespace *,
 extern void put_mnt_ns(struct mnt_namespace *ns);
 DEFINE_FREE(put_mnt_ns, struct mnt_namespace *, if (!IS_ERR_OR_NULL(_T)) put_mnt_ns(_T))
 extern struct ns_common *from_mnt_ns(struct mnt_namespace *);
+struct mnt_namespace *mnt_ns_get_from_common(struct ns_common *ns);
+bool mnt_ns_may_claim(struct ns_common *ns);
+int mnt_ns_seal_for_cell(struct mnt_namespace *ns, unsigned int nr_refs,
+			 struct user_namespace *cell_ns, bool ranged,
+			 struct path *root);
 
 extern const struct file_operations proc_mounts_operations;
 extern const struct file_operations proc_mountinfo_operations;

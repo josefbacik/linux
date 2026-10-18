@@ -407,3 +407,24 @@ int statmount_mnt_idmap(const struct mnt_idmap *idmap, struct seq_file *seq, boo
 
 	return nr_mappings;
 }
+
+#ifdef CONFIG_CELLS
+/**
+ * mnt_idmap_is_for_cell - was an idmapping made for this cell?
+ * @idmap:   idmapping of a mount
+ * @cell_ns: user namespace of a cell
+ *
+ * By identity and not by the value of the ids: nothing else can name an id of
+ * the window, and an idmapping that was made for an earlier holder of the same
+ * block keeps that block from being handed out again.
+ *
+ * Return: true if @idmap was made from @cell_ns.
+ */
+bool mnt_idmap_is_for_cell(const struct mnt_idmap *idmap,
+			   const struct user_namespace *cell_ns)
+{
+	if (idmap == &nop_mnt_idmap || idmap == &invalid_mnt_idmap)
+		return false;
+	return idmap->cell_ns == cell_ns;
+}
+#endif

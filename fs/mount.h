@@ -32,6 +32,9 @@ struct mnt_namespace {
 	unsigned int		pending_mounts;
 	refcount_t		passive; /* number references not pinning @mounts */
 	bool			is_anon;
+#ifdef CONFIG_CELLS
+	bool			cell_sealed; /* a cell's: nobody enters. namespace_sem */
+#endif
 } __randomize_layout;
 
 struct mnt_pcp {
