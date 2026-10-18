@@ -3095,6 +3095,14 @@ int cgroup_attach_task(struct cgroup *dst_cgrp, struct task_struct *leader,
 	struct task_struct *task;
 	int ret = 0;
 
+	/*
+	 * A task of a cell stays within the cell's budget, whoever asks. On
+	 * any other hierarchy no request moves it from where it was born. The
+	 * kernel itself may, with cgroup_transfer_tasks(), out of a legacy
+	 * cpuset that lost its last cpu. That never touches a budget.
+	 */
+	if (!cell_may_migrate(leader, dst_cgrp))
+		return -EPERM;
 	/* look up all src csets */
 	spin_lock_irq(&css_set_lock);
 	task = leader;
@@ -6942,6 +6950,11 @@ static int cgroup_css_set_fork(struct kernel_clone_args *kargs)
 		goto err;
 	}
 
+	/* A task of a cell stays within the cell's budget, children and all. */
+	if (!cell_may_migrate(current, dst_cgrp)) {
+		ret = -EPERM;
+		goto err;
+	}
 	/*
 	 * Verify that we the target cgroup is writable for us. This is
 	 * usually done by the vfs layer but since we're not going through
