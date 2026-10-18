@@ -104,6 +104,12 @@ static int embryo_install_fds(struct embryo *e)
 		ret = security_file_receive(file);
 		if (ret)
 			return ret;
+		/* As if the cell had opened it. */
+		if (file->f_mode & FMODE_WRITE) {
+			ret = cell_file_drop_privs(file);
+			if (ret)
+				return ret;
+		}
 		ret = replace_fd(e->fds[i].fd, file, 0);
 		if (ret < 0)
 			return ret;

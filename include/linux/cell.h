@@ -273,4 +273,11 @@ static inline umode_t cell_strip_setid(umode_t mode)
 	return mode;
 }
 
+/* Nothing a cell writes imparts privilege: files that are already there. */
+#ifdef CONFIG_CELLS
+int cell_file_drop_privs(struct file *file);
+#else
+static inline int cell_file_drop_privs(struct file *file) { return 0; }
+#endif
+
 #endif /* _LINUX_CELL_H */
