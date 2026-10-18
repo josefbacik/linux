@@ -52,4 +52,9 @@ struct cell_info {
 
 #define CELL_INFO_SIZE_VER0	56
 
+/* cell_open(): @what. */
+enum cell_open_what {
+	CELL_OPEN_SLOT		= 0,	/* An fd on the object in the slot named by @key */
+};
+
 #endif /* _UAPI_LINUX_CELL_H */
