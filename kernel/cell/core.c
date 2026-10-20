@@ -309,3 +309,31 @@ SYSCALL_DEFINE2(cell_create, int, parent, unsigned int, flags)
 	cell_put(cell);
 	return ret;
 }
+
+/**
+ * sys_cell_kill - kill a cell and everything in it
+ * @cfd:   the cell, in whatever state
+ * @flags: none yet, must be 0
+ *
+ * Kills every task in the budget. A cell that has run nothing yet is torn down
+ * on the spot. For one that has, that is for the exit of its init to set off, so
+ * this does not wait: the cellfd polls readable once the cell is dead. Killing a
+ * cell that is dying or dead already changes nothing.
+ *
+ * Return: 0, -EINVAL for a flag or a file that is no cellfd, -EBADF.
+ */
+SYSCALL_DEFINE2(cell_kill, int, cfd, unsigned int, flags)
+{
+	struct cell *cell;
+
+	if (flags)
+		return -EINVAL;
+
+	CLASS(fd, f)(cfd);
+	cell = cell_from_fd(&f);
+	if (IS_ERR(cell))
+		return PTR_ERR(cell);
+
+	cell_kill(cell);
+	return 0;
+}
