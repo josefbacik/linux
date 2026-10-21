@@ -17,6 +17,13 @@
 #define PIDFD_AUTOKILL O_TRUNC
 #endif
 
+/* pidfd_configure(): @cmd. Data only ever goes in. */
+enum pidfd_configure_cmd {
+	PIDFD_SET_STRING	= 0,	/* Set @key to the string in @value */
+	PIDFD_SET_BINARY	= 1,	/* Set @key to the @aux bytes at @value */
+	PIDFD_SET_FD		= 2,	/* The file to have at number @key, from fd @aux */
+	PIDFD_CMD_START		= 3,	/* Make the task, apply everything and exec */
+};
 /* Flags for pidfd_send_signal(). */
 #define PIDFD_SIGNAL_THREAD		(1UL << 0)
 #define PIDFD_SIGNAL_THREAD_GROUP	(1UL << 1)

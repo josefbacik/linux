@@ -40,6 +40,10 @@
 #include <net/af_unix.h>
 #include <uapi/linux/pidfd.h>
 
+#define EMBRYO_KEY_MAX		32
+#define EMBRYO_MAX_STRINGS	4096
+#define EMBRYO_MAX_BLOCK	(256 * 1024)
+
 struct embryo_strings {
 	char		*block;		/* NUL terminated strings, back to back */
 	const char	**vec;		/* NULL terminated, points into @block */
@@ -92,6 +96,53 @@ static void embryo_put(struct embryo *e)
 	embryo_drop_config(e);
 	cell_put(e->cell);
 	kfree_rcu(e, rcu);
+}
+
+/* The task is done being an embryo, one way or the other. */
+static void embryo_detach(struct embryo *e)
+{
+	WRITE_ONCE(current->embryo, NULL);
+	embryo_put(e);
+}
+
+static int embryo_exec(struct embryo *e)
+{
+	static const char * const no_strings[] = { NULL };
+	const char *argv0[] = { e->exec, NULL };
+
+	return kernel_execve(e->exec, e->argv.vec ?: argv0,
+			     e->envp.vec ?: no_strings);
+}
+
+static int embryo_main(void *arg)
+{
+	struct embryo *e = arg;
+	int ret;
+
+	/* CLONE_CLEAR_SIGHAND leaves what the starter ignores ignored. */
+	flush_signal_handlers(current, 1);
+
+	/* The starter's session, process group and terminal are not ours. */
+	ksys_setsid();
+	set_personality(PER_LINUX);
+
+	/* @started is set, so nobody changes anything any more. */
+	ret = embryo_exec(e);
+	embryo_drop_config(e);
+	/*
+	 * A signal to the embryo is no signal to whoever started it. Whatever
+	 * interrupted the exec, the embryo is about to be killed.
+	 */
+	if (ret && (fatal_signal_pending(current) || ret <= -ERESTARTSYS))
+		ret = -ESRCH;
+	e->result = ret;
+	complete_all(&e->done);
+	embryo_detach(e);
+	if (ret)
+		do_group_exit(SIGKILL);
+
+	/* Off to user mode. */
+	return 0;
 }
 
 /**
@@ -235,4 +286,201 @@ void embryo_pidfd_release(struct file *file)
 	if (!pid_has_numbers(e->pid))
 		free_pid_struct(e->pid);
 	embryo_put(e);
+}
+
+static struct embryo *embryo_from_file(struct file *file)
+{
+	struct pid *pid;
+
+	pid = pidfd_pid(file);
+	if (IS_ERR(pid))
+		return ERR_CAST(pid);
+	/* Only the file pidfd_open() returned will do. Nothing else ever has this. */
+	if (!(file->f_flags & PIDFD_EMPTY))
+		return ERR_PTR(-EPERM);
+	return file->private_data;
+}
+
+static int embryo_set_strings(struct embryo_strings *s, const void __user *ublock,
+			      size_t len)
+{
+	struct embryo_strings new = {};
+	unsigned int nr = 0, i;
+	size_t off;
+
+	if (!len || len > EMBRYO_MAX_BLOCK)
+		return -E2BIG;
+
+	new.block = vmemdup_user(ublock, len);
+	if (IS_ERR(new.block))
+		return PTR_ERR(new.block);
+	if (new.block[len - 1]) {
+		kvfree(new.block);
+		return -EINVAL;
+	}
+
+	for (off = 0; off < len; off += strlen(new.block + off) + 1)
+		nr++;
+	if (nr > EMBRYO_MAX_STRINGS) {
+		kvfree(new.block);
+		return -E2BIG;
+	}
+
+	new.vec = kvmalloc_array(nr + 1, sizeof(*new.vec), GFP_KERNEL_ACCOUNT);
+	if (!new.vec) {
+		kvfree(new.block);
+		return -ENOMEM;
+	}
+	for (off = 0, i = 0; off < len; off += strlen(new.block + off) + 1)
+		new.vec[i++] = new.block + off;
+	new.vec[i] = NULL;
+
+	embryo_strings_free(s);
+	*s = new;
+	return 0;
+}
+
+static int embryo_start(struct embryo *e)
+{
+	struct kernel_clone_args args = {
+		/*
+		 * CLONE_VM only says "do not copy the mm": there is none,
+		 * copy_mm() sees to that. Nobody has to wait for the task, the
+		 * pidfd tells. The rest is what every task of a cell gets.
+		 */
+		.flags		= CLONE_VM | CLONE_UNTRACED | CLONE_AUTOREAP |
+				  CLONE_INTO_CGROUP | CLONE_NNP | CLONE_CLEAR_SIGHAND,
+		.fn		= embryo_main,
+		.fn_arg		= e,
+		.name		= "embryo",
+		.pid		= e->pid,
+		.cell		= e->cell,
+		.embryo		= e,
+	};
+	pid_t nr;
+	int ret;
+
+	/* Until embryo_fork_finish(). */
+	ret = cell_fork_prepare(e->cell);
+	if (ret)
+		return ret;
+
+	scoped_guard(mutex, &e->lock) {
+		ret = e->started ? -EBUSY : e->exec ? 0 : -EINVAL;
+		if (!ret)
+			e->started = true;
+	}
+	if (ret) {
+		cell_fork_finish(e->cell);
+		return ret;
+	}
+
+	/* For the task. */
+	refcount_inc(&e->ref);
+	nr = kernel_clone(&args);
+	if (nr < 0) {
+		scoped_guard(mutex, &e->lock)
+			embryo_drop_config(e);
+		return nr;
+	}
+
+	/*
+	 * Everything up to the point of no return of the exec is reported
+	 * here. Past that it is a fatal signal, for the pidfd to tell.
+	 */
+	if (wait_for_completion_killable(&e->done))
+		return -EINTR;
+	return e->result;
+}
+
+/**
+ * sys_pidfd_configure - say what the task of an empty pidfd is to be, and start it
+ * @pidfd:  what pidfd_open() returned for PIDFD_EMPTY, and no other pidfd
+ * @cmd:    one of enum pidfd_configure_cmd
+ * @ukey:   the name of what is set, or NULL for PIDFD_CMD_START
+ * @uvalue: a string for PIDFD_SET_STRING, @aux bytes for PIDFD_SET_BINARY
+ * @aux:    a length for PIDFD_SET_BINARY, a file descriptor for PIDFD_SET_FD
+ *
+ * Shaped like fsconfig(). Data only goes in.
+ *
+ * PIDFD_CMD_START makes the task, applies everything in its context, has it exec
+ * and waits for that. Whatever goes wrong is returned here, and the task, if it
+ * got that far, is killed. It can be tried only once.
+ *
+ * Return: 0, -EPERM for any other pidfd, -EBUSY once it was started, -ESRCH if
+ * the task or the cell was killed, -EOPNOTSUPP for an unknown @cmd, -EINVAL for
+ * an unknown key or arguments that do not go with @cmd, or what went wrong.
+ */
+SYSCALL_DEFINE5(pidfd_configure, int, pidfd, unsigned int, cmd,
+		const char __user *, ukey, const void __user *, uvalue, int, aux)
+{
+	char *key __free(kfree) = NULL;
+	char *str __free(kfree) = NULL;
+	struct embryo *e;
+	int ret;
+
+	switch (cmd) {
+	case PIDFD_SET_STRING:
+		if (!ukey || !uvalue || aux)
+			return -EINVAL;
+		break;
+	case PIDFD_SET_BINARY:
+		if (!ukey || !uvalue || aux <= 0)
+			return -EINVAL;
+		break;
+	case PIDFD_CMD_START:
+		if (ukey || uvalue || aux)
+			return -EINVAL;
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	if (ukey) {
+		key = strndup_user(ukey, EMBRYO_KEY_MAX);
+		if (IS_ERR(key))
+			return PTR_ERR(no_free_ptr(key));
+	}
+	if (cmd == PIDFD_SET_STRING) {
+		str = strndup_user(uvalue, PATH_MAX);
+		if (IS_ERR(str))
+			return PTR_ERR(no_free_ptr(str));
+	}
+
+	CLASS(fd, f)(pidfd);
+	if (fd_empty(f))
+		return -EBADF;
+	e = embryo_from_file(fd_file(f));
+	if (IS_ERR(e))
+		return PTR_ERR(e);
+
+	if (cmd == PIDFD_CMD_START)
+		return embryo_start(e);
+
+	mutex_lock(&e->lock);
+	ret = -EBUSY;
+	if (e->started)
+		goto out;
+
+	switch (cmd) {
+	case PIDFD_SET_STRING:
+		ret = -EINVAL;
+		if (strcmp(key, "exec"))
+			break;
+		kfree(e->exec);
+		e->exec = no_free_ptr(str);
+		ret = 0;
+		break;
+	case PIDFD_SET_BINARY:
+		if (!strcmp(key, "argv"))
+			ret = embryo_set_strings(&e->argv, uvalue, aux);
+		else if (!strcmp(key, "envp"))
+			ret = embryo_set_strings(&e->envp, uvalue, aux);
+		else
+			ret = -EINVAL;
+		break;
+	}
+out:
+	mutex_unlock(&e->lock);
+	return ret;
 }
