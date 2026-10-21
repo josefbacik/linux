@@ -41,8 +41,15 @@
 #include <uapi/linux/pidfd.h>
 
 #define EMBRYO_KEY_MAX		32
+#define EMBRYO_MAX_FDS		256
+#define EMBRYO_MAX_FD		1024
 #define EMBRYO_MAX_STRINGS	4096
 #define EMBRYO_MAX_BLOCK	(256 * 1024)
+
+struct embryo_fd {
+	unsigned int	fd;
+	struct file	*file;
+};
 
 struct embryo_strings {
 	char		*block;		/* NUL terminated strings, back to back */
@@ -59,6 +66,8 @@ struct embryo {
 	char			*exec;
 	struct embryo_strings	argv;
 	struct embryo_strings	envp;
+	struct embryo_fd	fds[EMBRYO_MAX_FDS];
+	unsigned int		nr_fds;
 
 	struct pid		*pid;		/* the reference alloc_pid_struct() returned */
 	struct cell		*cell;		/* where the task is going to be */
@@ -75,6 +84,34 @@ static void embryo_strings_free(struct embryo_strings *s)
 	s->vec = NULL;
 }
 
+static void embryo_put_fds(struct embryo *e)
+{
+	unsigned int i;
+
+	for (i = 0; i < e->nr_fds; i++)
+		fput(e->fds[i].file);
+	e->nr_fds = 0;
+}
+
+/* In the context of the embryo, whose file table is empty. */
+static int embryo_install_fds(struct embryo *e)
+{
+	unsigned int i;
+	int ret;
+
+	for (i = 0; i < e->nr_fds; i++) {
+		struct file *file = e->fds[i].file;
+
+		ret = security_file_receive(file);
+		if (ret)
+			return ret;
+		ret = replace_fd(e->fds[i].fd, file, 0);
+		if (ret < 0)
+			return ret;
+	}
+	return 0;
+}
+
 /*
  * What was configured has been used, or never will be. The pidfd may be around
  * for long, and must not keep the other end of a pipe from seeing the last
@@ -86,6 +123,7 @@ static void embryo_drop_config(struct embryo *e)
 	e->exec = NULL;
 	embryo_strings_free(&e->argv);
 	embryo_strings_free(&e->envp);
+	embryo_put_fds(e);
 }
 
 static void embryo_put(struct embryo *e)
@@ -109,6 +147,11 @@ static int embryo_exec(struct embryo *e)
 {
 	static const char * const no_strings[] = { NULL };
 	const char *argv0[] = { e->exec, NULL };
+	int ret;
+
+	ret = embryo_install_fds(e);
+	if (ret)
+		return ret;
 
 	return kernel_execve(e->exec, e->argv.vec ?: argv0,
 			     e->envp.vec ?: no_strings);
@@ -340,6 +383,43 @@ static int embryo_set_strings(struct embryo_strings *s, const void __user *ubloc
 	return 0;
 }
 
+/*
+ * The file table of the new task is exactly what is put here. After this
+ * nothing crosses the boundary of the cell any more, so this is where it is
+ * decided what may.
+ */
+static int embryo_set_fd(struct embryo *e, const char *key, struct file *file)
+{
+	unsigned int fd, i;
+	int ret;
+
+	ret = kstrtouint(key, 10, &fd);
+	if (ret)
+		return -EINVAL;
+	if (fd >= EMBRYO_MAX_FD)
+		return -EBADF;
+
+	/* Handles on what is outside, or means to get at it. */
+	if (io_is_uring_fops(file) || cell_from_file(file) || proc_ns_file(file))
+		return -EPERM;
+	if (!IS_ERR(pidfd_pid(file)) && (file->f_flags & PIDFD_EMPTY))
+		return -EPERM;
+
+	for (i = 0; i < e->nr_fds; i++) {
+		if (e->fds[i].fd == fd) {
+			fput(e->fds[i].file);
+			e->fds[i].file = get_file(file);
+			return 0;
+		}
+	}
+	if (e->nr_fds == EMBRYO_MAX_FDS)
+		return -EMFILE;
+	e->fds[e->nr_fds].fd = fd;
+	e->fds[e->nr_fds].file = get_file(file);
+	e->nr_fds++;
+	return 0;
+}
+
 static int embryo_start(struct embryo *e)
 {
 	struct kernel_clone_args args = {
@@ -428,6 +508,10 @@ SYSCALL_DEFINE5(pidfd_configure, int, pidfd, unsigned int, cmd,
 		if (!ukey || !uvalue || aux <= 0)
 			return -EINVAL;
 		break;
+	case PIDFD_SET_FD:
+		if (!ukey || uvalue || aux < 0)
+			return -EINVAL;
+		break;
 	case PIDFD_CMD_START:
 		if (ukey || uvalue || aux)
 			return -EINVAL;
@@ -479,6 +563,14 @@ SYSCALL_DEFINE5(pidfd_configure, int, pidfd, unsigned int, cmd,
 		else
 			ret = -EINVAL;
 		break;
+	case PIDFD_SET_FD: {
+		CLASS(fd, slot)(aux);
+
+		ret = -EBADF;
+		if (!fd_empty(slot))
+			ret = embryo_set_fd(e, key, fd_file(slot));
+		break;
+	}
 	}
 out:
 	mutex_unlock(&e->lock);
