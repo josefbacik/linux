@@ -85,6 +85,7 @@ struct sighand_struct;
 struct signal_struct;
 struct task_delay_info;
 struct task_exec_state;
+struct embryo;
 struct task_group;
 struct task_struct;
 struct timespec64;
@@ -981,6 +982,11 @@ struct task_struct {
 	struct mm_struct		*active_mm;
 
 	struct task_exec_state __rcu	*exec_state;
+
+#ifdef CONFIG_CELLS
+	/* Set from PIDFD_CMD_START until the first exec has succeeded. */
+	struct embryo			*embryo;
+#endif
 
 	int				exit_state;
 	int				exit_code;

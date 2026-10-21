@@ -21,6 +21,8 @@ struct css_set;
 #define CLONE_LEGACY_FLAGS 0xffffffffULL
 
 struct cell;
+struct embryo;
+
 struct kernel_clone_args {
 	u64 flags;
 	int __user *pidfd;
@@ -48,6 +50,7 @@ struct kernel_clone_args {
 	unsigned int kill_seq;
 	struct pid *pid;
 	struct cell *cell;
+	struct embryo *embryo;
 };
 
 /*
