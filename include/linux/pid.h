@@ -183,8 +183,10 @@ extern struct pid *find_vpid(int nr);
 extern struct pid *find_get_pid(int nr);
 extern struct pid *find_ge_pid(int nr, struct pid_namespace *);
 
+struct pid *alloc_pid_struct(struct pid_namespace *ns);
+void free_pid_struct(struct pid *pid);
 extern struct pid *alloc_pid(struct pid_namespace *ns, pid_t *set_tid,
-			     size_t set_tid_size);
+			     size_t set_tid_size, struct pid *pid);
 extern void free_pid(struct pid *pid);
 void free_pids(struct pid **pids);
 extern void disable_pid_allocation(struct pid_namespace *ns);
@@ -205,6 +207,15 @@ static inline struct pid_namespace *ns_of_pid(struct pid *pid)
 	if (pid)
 		ns = pid->numbers[pid->level].ns;
 	return ns;
+}
+
+/*
+ * Has alloc_pid() given it its numbers? It keeps them for good, free_pid() only
+ * gives them back to the pid namespaces.
+ */
+static inline bool pid_has_numbers(const struct pid *pid)
+{
+	return pid->numbers[pid->level].nr;
 }
 
 /*
