@@ -1149,6 +1149,7 @@ struct kernfs_syscall_ops cgroup1_kf_syscall_ops = {
 	.mkdir			= cgroup_mkdir,
 	.rmdir			= cgroup_rmdir,
 	.show_path		= cgroup_show_path,
+	.may_change		= cgroup_may_change,
 };
 
 /*

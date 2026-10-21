@@ -65,3 +65,29 @@ bool cell_may_migrate(struct task_struct *task, struct cgroup *dst)
 	budget = READ_ONCE(cell->budget);
 	return budget && cgroup_is_descendant(dst, budget);
 }
+
+/**
+ * cell_may_change_cgroup - may the caller change a cgroup?
+ * @cgrp: the cgroup
+ *
+ * A task of a cell changes nothing outside of the budget of the cell, whatever
+ * the modes say and whoever owns the cgroup, which a cell of one id does if its
+ * maker does. It writes to no file, makes, removes and renames no cgroup, and
+ * sets no mode, owner, time or extended attribute. See cgroup_may_change() for
+ * where this is asked.
+ *
+ * What it makes is owned by ids that were only lent to the cell. Some of that is
+ * made without the filesystem being asked whether it can store the id, such as
+ * the files that enabling a controller adds to the children of a cgroup. So it
+ * has to be where it goes with the cell, see cgroup_cell_budget_put().
+ *
+ * It goes by who is asking and not by who opened the file, which may have been
+ * handed to the cell.
+ *
+ * Return: true if the caller is in no cell, or @cgrp is the budget of its cell or
+ * lies below it.
+ */
+bool cell_may_change_cgroup(struct cgroup *cgrp)
+{
+	return cell_may_migrate(current, cgrp);
+}

@@ -255,4 +255,11 @@ bool cell_may_migrate(struct task_struct *task, struct cgroup *dst);
 static inline bool cell_may_migrate(struct task_struct *t, struct cgroup *d) { return true; }
 #endif
 
+/* A task of a cell changes nothing outside of the budget. */
+#ifdef CONFIG_CELLS
+bool cell_may_change_cgroup(struct cgroup *cgrp);
+#else
+static inline bool cell_may_change_cgroup(struct cgroup *cgrp) { return true; }
+#endif
+
 #endif /* _LINUX_CELL_H */

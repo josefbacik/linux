@@ -6451,11 +6451,30 @@ int cgroup_rmdir(struct kernfs_node *kn)
 	return ret;
 }
 
+/* Whatever the modes say, and whoever owns it. */
+int cgroup_may_change(struct kernfs_node *kn)
+{
+	struct cgroup *cgrp;
+
+	if (likely(!current_cell()))
+		return 0;
+
+	/* @kn may have been removed, and the cgroup may be on its way out. */
+	guard(rcu)();
+	if (kernfs_type(kn) != KERNFS_DIR)
+		kn = rcu_dereference(kn->__parent);
+	cgrp = rcu_dereference(*(void __rcu __force **)&kn->priv);
+	if (!cgrp || !cell_may_change_cgroup(cgrp))
+		return -EPERM;
+	return 0;
+}
+
 static struct kernfs_syscall_ops cgroup_kf_syscall_ops = {
 	.show_options		= cgroup_show_options,
 	.mkdir			= cgroup_mkdir,
 	.rmdir			= cgroup_rmdir,
 	.show_path		= cgroup_show_path,
+	.may_change		= cgroup_may_change,
 };
 
 static void __init cgroup_init_subsys(struct cgroup_subsys *ss, bool early)
