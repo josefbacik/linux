@@ -24,6 +24,16 @@ enum pidfd_configure_cmd {
 	PIDFD_SET_FD		= 2,	/* The file to have at number @key, from fd @aux */
 	PIDFD_CMD_START		= 3,	/* Make the task, apply everything and exec */
 };
+
+/* pidfd_configure(PIDFD_SET_BINARY, "cred"). Ids are those of the new task. */
+struct pidfd_cred {
+	__u32 uid;
+	__u32 gid;
+	__u32 ngroups;
+	__u32 __spare;
+	__aligned_u64 groups;	/* pointer to @ngroups __u32 gids */
+};
+
 /* Flags for pidfd_send_signal(). */
 #define PIDFD_SIGNAL_THREAD		(1UL << 0)
 #define PIDFD_SIGNAL_THREAD_GROUP	(1UL << 1)
