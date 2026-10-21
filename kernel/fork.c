@@ -2335,7 +2335,7 @@ __latent_entropy struct task_struct *copy_process(
 
 	if (pid != &init_struct_pid) {
 		pid = alloc_pid(p->nsproxy->pid_ns_for_children, args->set_tid,
-				args->set_tid_size);
+				args->set_tid_size, args->pid);
 		if (IS_ERR(pid)) {
 			retval = PTR_ERR(pid);
 			goto bad_fork_cleanup_thread;

@@ -156,13 +156,75 @@ void free_pids(struct pid **pids)
 			free_pid(pids[tmp]);
 }
 
+/**
+ * alloc_pid_struct - allocate a struct pid that has no numbers yet
+ * @ns: the pid namespace it is going to get its numbers in
+ *
+ * What comes back can be referred to, waited on and added to pidfs. It
+ * has no task and no number in any pid namespace, so nothing finds it and it
+ * keeps no pid namespace from dying. Pass it to alloc_pid() for the numbers.
+ *
+ * Return: the struct pid, to be passed to alloc_pid() or free_pid_struct(), or
+ * NULL.
+ */
+struct pid *alloc_pid_struct(struct pid_namespace *ns)
+{
+	struct pid_namespace *tmp;
+	enum pid_type type;
+	struct pid *pid;
+	int i;
+
+	pid = kmem_cache_alloc(ns->pid_cachep, GFP_KERNEL);
+	if (!pid)
+		return NULL;
+
+	get_pid_ns(ns);
+	pid->level = ns->level;
+	refcount_set(&pid->count, 1);
+	spin_lock_init(&pid->lock);
+	for (type = 0; type < PIDTYPE_MAX; ++type)
+		INIT_HLIST_HEAD(&pid->tasks[type]);
+	init_waitqueue_head(&pid->wait_pidfd);
+	INIT_HLIST_HEAD(&pid->inodes);
+	pidfs_prepare_pid(pid);
+	for (tmp = ns, i = ns->level; i >= 0; tmp = tmp->parent, i--) {
+		pid->numbers[i].nr = 0;
+		pid->numbers[i].ns = tmp;
+	}
+	return pid;
+}
+
+/**
+ * free_pid_struct - free a struct pid that never got its numbers
+ * @pid: what alloc_pid_struct() returned, and no alloc_pid() succeeded on
+ *
+ * Drops the reference that alloc_pid_struct() returned.
+ */
+void free_pid_struct(struct pid *pid)
+{
+	WARN_ON_ONCE(pid_has_numbers(pid));
+	pidfs_remove_pid(pid);
+	call_rcu(&pid->rcu, delayed_put_pid);
+}
+
+/**
+ * alloc_pid - allocate a struct pid with a number in @ns and all its ancestors
+ * @ns:               the pid namespace
+ * @arg_set_tid:      the numbers to use, the most nested pid namespace first
+ * @arg_set_tid_size: how many of them there are
+ * @pid:              what alloc_pid_struct() returned for @ns, or NULL
+ *
+ * A @pid that is passed in has been added to pidfs already. If this fails it is
+ * as it was and still the caller's.
+ *
+ * Return: the struct pid, to be passed to free_pid(), or an ERR_PTR().
+ */
 struct pid *alloc_pid(struct pid_namespace *ns, pid_t *arg_set_tid,
-		      size_t arg_set_tid_size)
+		      size_t arg_set_tid_size, struct pid *pid)
 {
 	int set_tid[MAX_PID_NS_LEVEL + 1] = {};
 	int pid_max[MAX_PID_NS_LEVEL + 1] = {};
-	struct pid *pid;
-	enum pid_type type;
+	const bool prepared = pid;
 	int i, nr;
 	struct pid_namespace *tmp;
 	struct upid *upid;
@@ -179,25 +241,18 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t *arg_set_tid,
 	 */
 	if (arg_set_tid_size > ns->level + 1)
 		return ERR_PTR(-EINVAL);
+	if (prepared && (ns_of_pid(pid) != ns || pid_has_numbers(pid) || !pid->ino))
+		return ERR_PTR(-EINVAL);
 
 	/*
 	 * Prep before we take locks:
 	 *
 	 * 1. allocate and fill in pid struct
 	 */
-	pid = kmem_cache_alloc(ns->pid_cachep, GFP_KERNEL);
+	if (!prepared)
+		pid = alloc_pid_struct(ns);
 	if (!pid)
 		return ERR_PTR(retval);
-
-	get_pid_ns(ns);
-	pid->level = ns->level;
-	refcount_set(&pid->count, 1);
-	spin_lock_init(&pid->lock);
-	for (type = 0; type < PIDTYPE_MAX; ++type)
-		INIT_HLIST_HEAD(&pid->tasks[type]);
-	init_waitqueue_head(&pid->wait_pidfd);
-	INIT_HLIST_HEAD(&pid->inodes);
-	pidfs_prepare_pid(pid);
 
 	/*
 	 * 2. perm check checkpoint_restore_ns_capable()
@@ -337,6 +392,9 @@ struct pid *alloc_pid(struct pid_namespace *ns, pid_t *arg_set_tid,
 	idr_preload_end();
 	ns_ref_active_get(ns);
 
+	if (prepared)
+		return pid;
+
 	retval = pidfs_add_pid(pid);
 	if (unlikely(retval)) {
 		free_pid(pid);
@@ -349,14 +407,17 @@ out_free:
 	while (++i <= ns->level) {
 		upid = pid->numbers + i;
 		idr_remove(&upid->ns->idr, upid->nr);
+		upid->nr = 0;
 	}
 
 	spin_unlock(&pidmap_lock);
 	idr_preload_end();
 
 out_abort:
-	put_pid_ns(ns);
-	kmem_cache_free(ns->pid_cachep, pid);
+	if (!prepared) {
+		put_pid_ns(ns);
+		kmem_cache_free(ns->pid_cachep, pid);
+	}
 	return ERR_PTR(retval);
 }
 
