@@ -218,4 +218,15 @@ static inline void embryo_fork_finish(struct kernel_clone_args *a, struct task_s
 
 #endif
 
+/* An empty pidfd. */
+#ifdef CONFIG_CELLS
+int embryo_pidfd_open(int cfd, unsigned int flags);
+bool embryo_pidfd_is_empty(const struct file *file);
+void embryo_pidfd_release(struct file *file);
+#else
+static inline int embryo_pidfd_open(int cfd, unsigned int flags) { return -EINVAL; }
+static inline bool embryo_pidfd_is_empty(const struct file *file) { return false; }
+static inline void embryo_pidfd_release(struct file *file) { }
+#endif
+
 #endif /* _LINUX_CELL_H */

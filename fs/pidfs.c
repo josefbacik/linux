@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <linux/anon_inodes.h>
+#include <linux/cell.h>
 #include <linux/compat.h>
 #include <linux/exportfs.h>
 #include <linux/file.h>
@@ -278,6 +279,9 @@ static void pidfd_show_fdinfo(struct seq_file *m, struct file *f)
 	if (likely(pid_has_task(pid, PIDTYPE_PID))) {
 		ns = proc_pid_ns(file_inode(m->file)->i_sb);
 		nr = pid_nr_ns(pid, ns);
+	} else if (embryo_pidfd_is_empty(f)) {
+		/* No task yet is not the same as no task any more. */
+		nr = 0;
 	}
 
 	seq_put_decimal_ll(m, "Pid:\t", nr);
@@ -310,6 +314,9 @@ static __poll_t pidfd_poll(struct file *file, struct poll_table_struct *pts)
 	__poll_t poll_flags = 0;
 
 	poll_wait(file, &pid->wait_pidfd, pts);
+	/* No task yet is not the same as no task any more. */
+	if (embryo_pidfd_is_empty(file))
+		return 0;
 	/*
 	 * Don't wake waiters if the thread-group leader exited
 	 * prematurely. They either get notified when the last subthread
@@ -421,6 +428,10 @@ static long pidfd_info(struct file *file, unsigned int cmd, unsigned long arg)
 		 * information is available
 		 */
 		if (!(mask & PIDFD_INFO_EXIT))
+			return -ESRCH;
+		/* What was opened empty may never have had a task to exit. */
+		if ((file->f_flags & PIDFD_EMPTY) &&
+		    !test_bit(PIDFS_ATTR_BIT_EXIT, &attr->attr_mask))
 			return -ESRCH;
 
 		goto copy_out;
@@ -695,6 +706,9 @@ static int pidfs_file_release(struct inode *inode, struct file *file)
 	struct pid *pid = inode->i_private;
 	struct task_struct *task;
 
+	if (file->f_flags & PIDFD_EMPTY)
+		embryo_pidfd_release(file);
+
 	if (!(file->f_flags & PIDFD_AUTOKILL))
 		return 0;
 
@@ -965,7 +979,8 @@ static struct file *pidfs_dentry_open(const struct path *path,
 	file = dentry_open(path, flags | O_RDWR, cred);
 	/* do_dentry_open() strips O_EXCL and O_TRUNC. */
 	if (!IS_ERR(file))
-		file->f_flags |= flags & (PIDFD_THREAD | PIDFD_AUTOKILL);
+		file->f_flags |= flags & (PIDFD_THREAD | PIDFD_AUTOKILL |
+					  PIDFD_EMPTY);
 	return file;
 }
 
@@ -994,10 +1009,10 @@ static int pidfs_export_permission(struct handle_to_path_ctx *ctx,
 static struct file *pidfs_export_open(const struct path *path, unsigned int oflags)
 {
 	/*
-	 * Opening via file handle may never raise PIDFD_AUTOKILL. That can
-	 * only be done at task creation!
+	 * Opening via file handle may never raise PIDFD_AUTOKILL or
+	 * PIDFD_EMPTY. That can only be done at task creation, or ahead of it!
 	 */
-	if (WARN_ON_ONCE(oflags & PIDFD_AUTOKILL))
+	if (WARN_ON_ONCE(oflags & (PIDFD_AUTOKILL | PIDFD_EMPTY)))
 		return ERR_PTR(-EINVAL);
 	/* Clear O_LARGEFILE as open_by_handle_at() forces it. */
 	return pidfs_dentry_open(path, oflags & ~O_LARGEFILE, current_cred());
@@ -1187,8 +1202,8 @@ struct file *pidfs_alloc_file(struct pid *pid, unsigned int flags)
 	 * Ensure that internal pidfd flags don't overlap with each
 	 * other or with uapi pidfd flags.
 	 */
-	BUILD_BUG_ON(hweight32(PIDFD_THREAD | PIDFD_NONBLOCK |
-				PIDFD_STALE | PIDFD_AUTOKILL) != 4);
+	BUILD_BUG_ON(hweight32(PIDFD_THREAD | PIDFD_NONBLOCK | PIDFD_STALE |
+			       PIDFD_AUTOKILL | PIDFD_EMPTY) != 5);
 
 	ret = path_from_stashed(&pid->stashed, pidfs_mnt, get_pid(pid), &path);
 	if (ret < 0)
