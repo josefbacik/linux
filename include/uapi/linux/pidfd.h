@@ -10,6 +10,7 @@
 /* Flags for pidfd_open().  */
 #define PIDFD_NONBLOCK	O_NONBLOCK
 #define PIDFD_THREAD	O_EXCL
+#define PIDFD_EMPTY	O_NOCTTY /* No task yet. See pidfd_configure(). */
 #ifdef __KERNEL__
 #include <linux/sched.h>
 #define PIDFD_STALE CLONE_PIDFD

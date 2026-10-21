@@ -119,3 +119,120 @@ void embryo_fork_finish(struct kernel_clone_args *args, struct task_struct *p)
 		embryo_put(e);
 	}
 }
+
+static int embryo_pidfd_create(struct embryo *e, unsigned int flags)
+{
+	struct file *file;
+
+	CLASS(get_unused_fd, fd)(O_CLOEXEC);
+	if (fd < 0)
+		return fd;
+	file = pidfs_alloc_file(e->pid, flags | O_RDWR);
+	if (IS_ERR(file))
+		return PTR_ERR(file);
+
+	file->private_data = e;
+	fd_install(fd, file);
+	return take_fd(fd);
+}
+
+/**
+ * embryo_pidfd_open - pidfd_open() with PIDFD_EMPTY
+ * @cfd:   the cell the task is going to be in
+ * @flags: PIDFD_EMPTY, and PIDFD_NONBLOCK if wanted
+ *
+ * The struct pid is made here and gets no numbers before the task is started.
+ * Its size goes by the pid namespace, which is why the cell has to be known by
+ * now. It reserves nothing in there: whichever task is started first is the init
+ * of the cell, and a pidfd that is left empty keeps no cell from dying.
+ *
+ * Return: the pidfd, which is always close-on-exec, -EPERM if the caller is in a
+ * cell, -EOPNOTSUPP without a cell, what cell_fork_prepare() has to say about the
+ * cell, or another negative error.
+ */
+int embryo_pidfd_open(int cfd, unsigned int flags)
+{
+	struct embryo *e;
+	struct cell *cell;
+	int ret;
+
+	if (flags & ~(PIDFD_EMPTY | PIDFD_NONBLOCK))
+		return -EINVAL;
+	/* Whatever the file descriptor is. */
+	if (!cell_may_spawn())
+		return -EPERM;
+	/* A task like this outside of a cell makes sense. It is not done yet. */
+	if (cfd == -EBADF)
+		return -EOPNOTSUPP;
+
+	CLASS(fd, f)(cfd);
+	if (fd_empty(f))
+		return -EBADF;
+	cell = cell_from_file(fd_file(f));
+	if (!cell)
+		return -EINVAL;
+
+	e = kzalloc_obj(struct embryo, GFP_KERNEL_ACCOUNT);
+	if (!e)
+		return -ENOMEM;
+	refcount_set(&e->ref, 1);
+	mutex_init(&e->lock);
+	init_completion(&e->done);
+
+	ret = cell_fork_prepare(cell);
+	if (ret) {
+		kfree(e);
+		return ret;
+	}
+	e->pid = alloc_pid_struct(cell_nsproxy(cell)->pid_ns_for_children);
+	e->cell = cell_get(cell);
+	cell_fork_finish(cell);
+
+	ret = -ENOMEM;
+	if (!e->pid)
+		goto err_put;
+	ret = pidfs_add_pid(e->pid);
+	if (ret)
+		goto err_pid;
+	ret = embryo_pidfd_create(e, flags);
+	if (ret >= 0)
+		return ret;
+err_pid:
+	free_pid_struct(e->pid);
+err_put:
+	embryo_put(e);
+	return ret;
+}
+
+/**
+ * embryo_pidfd_is_empty - is there no task yet, rather than no task any more?
+ * @file: a pidfd
+ *
+ * Return: true for what pidfd_open() returned for PIDFD_EMPTY, until there is a
+ * task or it is known that there never will be.
+ */
+bool embryo_pidfd_is_empty(const struct file *file)
+{
+	const struct embryo *e = file->private_data;
+
+	return (file->f_flags & PIDFD_EMPTY) && !READ_ONCE(e->settled);
+}
+
+/**
+ * embryo_pidfd_release - what pidfd_open() returned for PIDFD_EMPTY was closed
+ * @file: the pidfd
+ *
+ * A task that was started is left alone. If there never was one, neither is
+ * there anything to kill.
+ *
+ * Context: The ->release() of the file.
+ */
+void embryo_pidfd_release(struct file *file)
+{
+	struct embryo *e = file->private_data;
+
+	/* Otherwise free_pid() has dropped, or is going to drop, that reference. */
+	if (!pid_has_numbers(e->pid))
+		free_pid_struct(e->pid);
+	embryo_put(e);
+}

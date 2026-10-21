@@ -39,6 +39,7 @@
 #include <linux/proc_ns.h>
 #include <linux/refcount.h>
 #include <linux/anon_inodes.h>
+#include <linux/cell.h>
 #include <linux/sched/signal.h>
 #include <linux/sched/task.h>
 #include <linux/idr.h>
@@ -759,6 +760,10 @@ SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
 {
 	int fd;
 	struct pid *p;
+
+	/* There is no task to name yet. @pid says where it is going to be. */
+	if (flags & PIDFD_EMPTY)
+		return embryo_pidfd_open(pid, flags);
 
 	if (flags & ~(PIDFD_NONBLOCK | PIDFD_THREAD))
 		return -EINVAL;
