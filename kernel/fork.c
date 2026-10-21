@@ -1566,7 +1566,7 @@ fail_nomem:
 	return NULL;
 }
 
-static int copy_mm(u64 clone_flags, struct task_struct *tsk)
+static int copy_mm(u64 clone_flags, struct task_struct *tsk, bool embryo)
 {
 	struct mm_struct *mm, *oldmm;
 
@@ -1584,9 +1584,12 @@ static int copy_mm(u64 clone_flags, struct task_struct *tsk)
 	 * Are we cloning a kernel thread?
 	 *
 	 * We need to steal a active VM for that..
+	 *
+	 * An embryo is in the same position until it execs. It must never
+	 * get to see the mm of whoever created it.
 	 */
 	oldmm = current->mm;
-	if (!oldmm)
+	if (!oldmm || embryo)
 		return 0;
 
 	if (clone_flags & CLONE_VM) {
@@ -1694,9 +1697,18 @@ static int copy_fs(u64 clone_flags, struct task_struct *tsk,
 }
 
 static int copy_files(u64 clone_flags, struct task_struct *tsk,
-		      int no_files)
+		      int no_files, bool embryo)
 {
 	struct files_struct *oldf, *newf;
+
+	/* An empty table. What pidfd_configure() was given goes in there. */
+	if (embryo) {
+		newf = dup_fd(&init_files, NULL);
+		if (IS_ERR(newf))
+			return PTR_ERR(newf);
+		tsk->files = newf;
+		return 0;
+	}
 
 	/*
 	 * A background process may not have any files ...
@@ -2188,6 +2200,14 @@ __latent_entropy struct task_struct *copy_process(
 	}
 	if (args->io_thread)
 		p->flags |= PF_IO_WORKER;
+#ifdef CONFIG_CELLS
+	p->embryo = args->embryo;
+	if (args->embryo) {
+		sigemptyset(&p->blocked);
+		sigemptyset(&p->saved_sigmask);
+		clear_tsk_restore_sigmask(p);
+	}
+#endif
 
 	if (args->name)
 		strscpy_pad(p->comm, args->name, sizeof(p->comm));
@@ -2331,7 +2351,7 @@ __latent_entropy struct task_struct *copy_process(
 	retval = copy_semundo(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_security;
-	retval = copy_files(clone_flags, p, args->no_files);
+	retval = copy_files(clone_flags, p, args->no_files, args->embryo);
 	if (retval)
 		goto bad_fork_cleanup_semundo;
 	retval = copy_fs(clone_flags, p,
@@ -2345,7 +2365,7 @@ __latent_entropy struct task_struct *copy_process(
 	retval = copy_signal(clone_flags, p);
 	if (retval)
 		goto bad_fork_cleanup_sighand;
-	retval = copy_mm(clone_flags, p);
+	retval = copy_mm(clone_flags, p, args->embryo);
 	if (retval)
 		goto bad_fork_cleanup_signal;
 	retval = copy_namespaces(clone_flags, p, args->cell);
@@ -2563,8 +2583,10 @@ __latent_entropy struct task_struct *copy_process(
 				WRITE_ONCE(ns->child_reaper, p);
 				p->signal->flags |= SIGNAL_UNKILLABLE;
 			}
-			p->signal->shared_pending.signal = delayed.signal;
-			p->signal->tty = tty_kref_get(current->signal->tty);
+			if (!args->embryo)
+				p->signal->shared_pending.signal = delayed.signal;
+			if (!args->embryo)
+				p->signal->tty = tty_kref_get(current->signal->tty);
 			/*
 			 * Inherit has_child_subreaper flag under the same
 			 * tasklist_lock with adding child to the process tree
@@ -2811,6 +2833,9 @@ pid_t kernel_clone(struct kernel_clone_args *args)
 
 	p = copy_process(NULL, trace, NUMA_NO_NODE, args);
 	add_latent_entropy();
+
+	if (args->embryo)
+		embryo_fork_finish(args, p);
 
 	if (IS_ERR(p))
 		return PTR_ERR(p);
