@@ -118,6 +118,10 @@ int kernfs_iop_setattr(const struct mnt_idmap *idmap, struct dentry *dentry,
 	if (!kn)
 		return -EINVAL;
 
+	error = kernfs_may_change(kn);
+	if (error)
+		return error;
+
 	root = kernfs_root(kn);
 	down_write(&root->kernfs_iattr_rwsem);
 	error = setattr_prepare(&nop_mnt_idmap, dentry, iattr);
@@ -283,6 +287,12 @@ int kernfs_iop_permission(const struct mnt_idmap *idmap,
 	kn = inode->i_private;
 	root = kernfs_root(kn);
 
+	if (mask & MAY_WRITE) {
+		ret = kernfs_may_change(kn);
+		if (ret)
+			return ret;
+	}
+
 	down_read(&root->kernfs_iattr_rwsem);
 	kernfs_refresh_inode(kn, inode);
 	ret = generic_permission(&nop_mnt_idmap, inode, mask);
@@ -349,6 +359,11 @@ static int kernfs_vfs_xattr_set(const struct xattr_handler *handler,
 {
 	const char *name = xattr_full_name(handler, suffix);
 	struct kernfs_node *kn = inode->i_private;
+	int ret;
+
+	ret = kernfs_may_change(kn);
+	if (ret)
+		return ret;
 
 	return kernfs_xattr_set(kn, name, value, size, flags);
 }
@@ -362,9 +377,14 @@ static int kernfs_vfs_user_xattr_set(const struct xattr_handler *handler,
 	const char *full_name = xattr_full_name(handler, suffix);
 	struct kernfs_node *kn = inode->i_private;
 	struct kernfs_iattrs *attrs;
+	int ret;
 
 	if (!(kernfs_root(kn)->flags & KERNFS_ROOT_SUPPORT_USER_XATTR))
 		return -EOPNOTSUPP;
+
+	ret = kernfs_may_change(kn);
+	if (ret)
+		return ret;
 
 	attrs = kernfs_iattrs(kn);
 	if (!attrs)

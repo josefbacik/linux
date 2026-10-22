@@ -307,6 +307,11 @@ static ssize_t kernfs_fop_write_iter(struct kiocb *iocb, struct iov_iter *iter)
 	ssize_t len = iov_iter_count(iter);
 	const struct kernfs_ops *ops;
 	char *buf;
+	int ret;
+
+	ret = kernfs_may_change(of->kn);
+	if (ret)
+		return ret;
 
 	if (of->atomic_write_len) {
 		if (len > of->atomic_write_len)

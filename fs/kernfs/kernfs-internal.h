@@ -127,6 +127,16 @@ static inline const char *kernfs_rcu_name(const struct kernfs_node *kn)
 				     kernfs_rename_is_locked(kn));
 }
 
+/* See kernfs_syscall_ops::may_change. */
+static inline int kernfs_may_change(struct kernfs_node *kn)
+{
+	struct kernfs_syscall_ops *scops = kernfs_root(kn)->syscall_ops;
+
+	if (scops && scops->may_change)
+		return scops->may_change(kn);
+	return 0;
+}
+
 static inline struct kernfs_node *kernfs_parent(const struct kernfs_node *kn)
 {
 	/*

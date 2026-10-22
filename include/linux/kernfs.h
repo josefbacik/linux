@@ -253,6 +253,15 @@ struct kernfs_syscall_ops {
 		      const char *new_name);
 	int (*show_path)(struct seq_file *sf, struct kernfs_node *kn,
 			 struct kernfs_root *root);
+	/*
+	 * May the caller change @kn? Asked on top of what the mode says, and
+	 * before it: when permission to write is asked for, which is what
+	 * opening a file for writing and making, removing or renaming an entry
+	 * of a directory take, for every write to a file, whoever opened it, and
+	 * before an attribute or an extended attribute is set or removed. No
+	 * active reference is held on @kn. Returns 0 or a negative error.
+	 */
+	int (*may_change)(struct kernfs_node *kn);
 };
 
 struct kernfs_node *kernfs_root_to_node(struct kernfs_root *root);
