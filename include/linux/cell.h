@@ -262,4 +262,11 @@ bool cell_may_change_cgroup(struct cgroup *cgrp);
 static inline bool cell_may_change_cgroup(struct cgroup *cgrp) { return true; }
 #endif
 
+/* A cell without a network. */
+#ifdef CONFIG_CELLS
+bool cell_no_net(void);
+#else
+static inline bool cell_no_net(void) { return false; }
+#endif
+
 #endif /* _LINUX_CELL_H */

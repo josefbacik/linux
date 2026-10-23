@@ -106,6 +106,7 @@
 #include <linux/route.h>
 #include <linux/termios.h>
 #include <linux/sockios.h>
+#include <linux/cell.h>
 #include <net/busy_poll.h>
 #include <linux/errqueue.h>
 #include <linux/ptp_clock_kernel.h>
@@ -1349,6 +1350,22 @@ static long sock_do_ioctl(struct net *net, struct socket *sock,
  *	what to do with it - that's up to the protocol still.
  */
 
+/*
+ * Is @cmd about the network that a socket is in, its devices, addresses and
+ * routes, and not about the socket? Those are served for any socket, whatever
+ * its family, some of them by the family itself. From SIOCADDRT up that is all
+ * of them but one. What a protocol keeps to itself, SIOCPROTOPRIVATE, may be
+ * either, the counters of multicast routing are in there, so it counts.
+ */
+static bool sock_ioctl_about_net(unsigned int cmd)
+{
+	if (cmd >= SIOCIWFIRST && cmd <= SIOCIWLAST)
+		return true;
+	if (!is_socket_ioctl_cmd(cmd) || _IOC_NR(cmd) < _IOC_NR(SIOCADDRT))
+		return false;
+	return cmd != SIOCOUTQNSD;
+}
+
 static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 {
 	const struct proto_ops  *ops;
@@ -1357,6 +1374,10 @@ static long sock_ioctl(struct file *file, unsigned cmd, unsigned long arg)
 	void __user *argp = (void __user *)arg;
 	int pid, err;
 	struct net *net;
+
+	/* There is no network, so there are no devices. */
+	if (sock_ioctl_about_net(cmd) && cell_no_net())
+		return -ENODEV;
 
 	sock = file->private_data;
 	ops = READ_ONCE(sock->ops);
@@ -1616,6 +1637,10 @@ int __sock_create(struct net *net, int family, int type, int protocol,
 		return -EAFNOSUPPORT;
 	if (type < 0 || type >= SOCK_MAX)
 		return -EINVAL;
+
+	/* As in a kernel that was built without the rest of them. */
+	if (!kern && family != PF_UNIX && cell_no_net())
+		return -EAFNOSUPPORT;
 
 	/* Compatibility.
 
@@ -3639,6 +3664,9 @@ static long compat_sock_ioctl(struct file *file, unsigned int cmd,
 	int ret = -ENOIOCTLCMD;
 	struct sock *sk;
 	struct net *net;
+
+	if (sock_ioctl_about_net(cmd) && cell_no_net())
+		return -ENODEV;
 
 	sk = sock->sk;
 	net = sock_net(sk);

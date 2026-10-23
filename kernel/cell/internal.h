@@ -32,6 +32,7 @@ struct cell {
 	struct mnt_namespace	*mnt_ns;
 	struct pid_namespace	*pid_ns;
 	struct net		*net;
+	bool			no_net;		/* the slot was left empty */
 	struct cgroup		*budget;
 	u64			budget_id;
 	kuid_t			budget_uid;	/* who owned it before */

@@ -199,6 +199,7 @@ static int cell_seal(struct cell *cell)
 	struct nsproxy *nsproxy;
 	kuid_t root_uid;
 	kgid_t root_gid;
+	bool no_net;
 	int ret;
 
 	if (!cell->budget || !cell->mnt_ns)
@@ -212,9 +213,15 @@ static int cell_seal(struct cell *cell)
 	ret = cell_make_pid_ns(cell);
 	if (ret)
 		return ret;
+	/* No network, see cell_no_net(). Unix sockets need a namespace to live in all the same. */
+	no_net = !cell->net;
 	ret = cell_make_net(cell, cell->user_ns->parent);
 	if (ret)
 		return ret;
+	/* Only now. Had that failed, the slot would still be there to be filled. */
+	if (no_net)
+		cell->no_net = true;
+
 	cgroup_ns = cgroup_cell_ns(cell->user_ns, cell->budget);
 	if (IS_ERR(cgroup_ns))
 		return PTR_ERR(cgroup_ns);
@@ -395,6 +402,8 @@ SYSCALL_DEFINE5(cell_open, int, cfd, unsigned int, what,
 			ret = cell_make_net(cell, cell->user_ns->parent);
 			if (ret)
 				return ret;
+			/* A seal that failed may have made it. Whoever asks means to set it up. */
+			cell->no_net = false;
 			ns = &get_net(cell->net)->ns;
 		} else if (!strcmp(key, "pids")) {
 			ret = cell_make_pid_ns(cell);

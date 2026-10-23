@@ -91,3 +91,22 @@ bool cell_may_change_cgroup(struct cgroup *cgrp)
 {
 	return cell_may_migrate(current, cgrp);
 }
+
+/**
+ * cell_no_net - is the caller in a cell that was built without a network?
+ *
+ * A cell whose "net" slot was left empty has no network. Its tasks make no
+ * socket but a unix socket, and learn nothing about a network through any socket.
+ * What they are handed works: a socket is the authority to use it.
+ *
+ * It goes by the cell of the caller and not by the network namespace it is in,
+ * so that it holds whatever that is.
+ *
+ * Return: true if so, false for a task of any other cell and of the host.
+ */
+bool cell_no_net(void)
+{
+	struct cell *cell = current_cell();
+
+	return cell && cell->no_net;
+}
