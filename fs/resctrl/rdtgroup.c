@@ -12,6 +12,7 @@
 
 #define pr_fmt(fmt)	KBUILD_MODNAME ": " fmt
 
+#include <linux/cell.h>
 #include <linux/cpu.h>
 #include <linux/debugfs.h>
 #include <linux/fs.h>
@@ -4453,11 +4454,18 @@ static int rdtgroup_show_options(struct seq_file *seq, struct kernfs_root *kf)
 	return 0;
 }
 
+/* Nothing here is a cell's, whatever the modes say and whoever owns it. */
+static int rdtgroup_may_change(struct kernfs_node *kn)
+{
+	return current_cell() ? -EPERM : 0;
+}
+
 static struct kernfs_syscall_ops rdtgroup_kf_syscall_ops = {
 	.mkdir		= rdtgroup_mkdir,
 	.rmdir		= rdtgroup_rmdir,
 	.rename		= rdtgroup_rename,
 	.show_options	= rdtgroup_show_options,
+	.may_change	= rdtgroup_may_change,
 };
 
 static int rdtgroup_setup_root(struct rdt_fs_context *ctx)
